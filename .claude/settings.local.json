@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(timeout:*)",
+      "Bash(curl:*)",
+      "Bash(LL_USERNAME=LemireD LL_PASSWORD=mcnabb05 python:*)",
+      "Bash(setx:*)",
+      "Bash(set ANTHROPIC_API_KEY=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)",
+      "Bash(export ANTHROPIC_API_KEY=\"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\")",
+      "Bash(pkill:*)",
+      "Bash(netstat:*)",
+      "Bash(for pid in 37044 28616 36648 28580 34980)",
+      "Bash(do taskkill //F //PID $pid)",
+      "Bash(done)",
+      "Bash(for pid in 37044 28616 34980)",
+      "Bash(for pid in 28616 37044 34980 38740)",
+      "Bash(taskkill:*)"
+    ]
+  }
+}

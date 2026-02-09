@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Study - LL Trivia{% endblock %}
+{% block body_class %}study-page{% endblock %}
+
+{% block content %}
+<div class="study-layout">
+    <div class="study-sidebar">
+        <h3>Filters</h3>
+        <div class="filter-group">
+            <label for="category-filter">Category</label>
+            <select id="category-filter">
+                <option value="">All Categories</option>
+                {% for cat in categories %}
+                <option value="{{ cat }}">{{ cat }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filter-group">
+            <label for="difficulty-filter">Difficulty</label>
+            <select id="difficulty-filter">
+                <option value="">All Difficulties</option>
+                <option value="easy">Easy (70%+)</option>
+                <option value="medium">Medium (30-70%)</option>
+                <option value="hard">Hard (&lt;30%)</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label for="mode-filter">Mode</label>
+            <select id="mode-filter">
+                <option value="review">Due for Review</option>
+                <option value="unseen">Unseen Only</option>
+                <option value="all">All Questions</option>
+            </select>
+        </div>
+        <button id="load-btn" class="btn btn-primary">Load Questions</button>
+
+        <div class="session-info" id="session-info" style="display:none">
+            <div class="progress-bar-wrap">
+                <div class="progress-bar" id="progress-bar"></div>
+            </div>
+            <span id="progress-text">0 / 0</span>
+        </div>
+    </div>
+
+    <div class="study-main">
+        <div id="card-area">
+            <div class="empty-state" id="empty-msg">
+                <p>Select filters and click <strong>Load Questions</strong> to start studying.</p>
+            </div>
+
+            <div class="flashcard-container" id="flashcard" style="display:none">
+                <div class="flashcard" id="card">
+                    <div class="card-front">
+                        <div class="card-meta" id="card-meta"></div>
+                        <div class="card-question" id="card-question"></div>
+                        <div class="card-hint">Click or press Space to reveal answer</div>
+                    </div>
+                    <div class="card-back">
+                        <div class="card-meta" id="card-meta-back"></div>
+                        <div class="card-answer-label">Answer:</div>
+                        <div class="card-answer" id="card-answer"></div>
+                        <div class="card-pct" id="card-pct"></div>
+                        <button class="btn btn-learn-more" id="learn-more-btn" onclick="learnMore()">Learn More</button>
+                        <div class="learn-more-content" id="learn-more-content" style="display:none"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-controls" id="card-controls" style="display:none">
+                <p>How did you do?</p>
+                <div class="rating-buttons">
+                    <button class="btn btn-hard" onclick="rateCard(1, false)">Hard (1)</button>
+                    <button class="btn btn-medium" onclick="rateCard(2, true)">Medium (2)</button>
+                    <button class="btn btn-easy" onclick="rateCard(3, true)">Easy (3)</button>
+                </div>
+                <button class="btn btn-skip" onclick="skipCard()">Skip</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+{% endblock %}

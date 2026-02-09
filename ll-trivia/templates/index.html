@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - LL Trivia{% endblock %}
+
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-number">{{ total_questions }}</div>
+        <div class="stat-label">Total Questions</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number">{{ total_studied }}</div>
+        <div class="stat-label">Questions Studied</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number">{{ due_for_review }}</div>
+        <div class="stat-label">Due for Review</div>
+    </div>
+    <div class="stat-card action">
+        <a href="/study">Start Studying</a>
+    </div>
+</div>
+
+{% if category_counts %}
+<h2>Questions by Category</h2>
+<div class="category-table-wrap">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Category</th>
+                <th>Count</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for cat, count in category_counts %}
+            <tr>
+                <td>{{ cat }}</td>
+                <td>{{ count }}</td>
+                <td>
+                    <div class="bar" style="width: {{ (count / category_counts[0][1] * 100)|int }}%"></div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if recent_questions %}
+<h2>Recently Added</h2>
+<ul class="recent-list">
+    {% for q in recent_questions %}
+    <li>
+        <span class="badge">{{ q.category }}</span>
+        <span class="q-source">{{ q.season }} MD{{ q.match_day }}</span>
+        {{ q.question_text[:120] }}{% if q.question_text|length > 120 %}...{% endif %}
+    </li>
+    {% endfor %}
+</ul>
+{% endif %}
+
+{% if total_questions == 0 %}
+<div class="empty-state">
+    <p>No questions yet. <a href="/import">Import some questions</a> to get started.</p>
+</div>
+{% endif %}
+{% endblock %}
