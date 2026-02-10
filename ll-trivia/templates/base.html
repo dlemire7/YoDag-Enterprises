@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}LL Trivia Study{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="{% block body_class %}{% endblock %}">
+    <nav class="navbar">
+        <a href="/" class="nav-brand">LL Trivia</a>
+        <div class="nav-links">
+            <a href="/" class="{% if request.path == '/' %}active{% endif %}">Dashboard</a>
+            <a href="/study" class="{% if request.path == '/study' %}active{% endif %}">Study</a>
+            <a href="/import" class="{% if request.path == '/import' %}active{% endif %}">Import</a>
+            <a href="/stats" class="{% if request.path == '/stats' %}active{% endif %}">Stats</a>
+        </div>
+    </nav>
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+    {% block scripts %}{% endblock %}
+</body>
+</html>
