@@ -1,0 +1,1128 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.badge--michelin { background-color: rgba(255, 71, 87, 0.15); color: var(--badge-michelin); }
+.badge--google   { background-color: rgba(66, 133, 244, 0.15); color: var(--badge-google); }
+.badge--eater    { background-color: rgba(22, 163, 74, 0.15);  color: var(--badge-eater); }
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.status-dot--monitoring { background-color: var(--status-monitoring); }
+.status-dot--booked     { background-color: var(--status-booked); }
+.status-dot--failed     { background-color: var(--status-failed); }
+.status-dot--pending    { background-color: var(--status-pending); }
+
+/* ===========================
+   Stats Dashboard
+   =========================== */
+.stats-dashboard {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.stats-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 20px 16px;
+  background-color: var(--bg-card);
+  border: 1px solid #2a2a2a;
+  border-radius: var(--border-radius-lg);
+  transition: border-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.stats-card:hover {
+  border-color: var(--accent-gold);
+  transform: translateY(-2px);
+}
+
+.stats-icon {
+  font-size: 1.2rem;
+  color: var(--accent-gold);
+}
+
+.stats-value {
+  font-family: var(--font-heading);
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.stats-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* ===========================
+   Search Bar
+   =========================== */
+.search-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.search-bar__input-wrapper {
+  position: relative;
+  flex: 1 1 280px;
+}
+
+.search-bar__input {
+  width: 100%;
+  padding: 10px 36px 10px 14px;
+  background-color: var(--bg-card);
+  border: 1px solid #2a2a2a;
+  border-radius: var(--border-radius);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.search-bar__input::placeholder {
+  color: var(--text-muted);
+}
+
+.search-bar__input:focus {
+  border-color: var(--accent-gold);
+}
+
+.search-bar__clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  line-height: 1;
+}
+
+.search-bar__clear:hover {
+  color: var(--text-primary);
+}
+
+.search-bar__filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.search-bar__select {
+  padding: 10px 12px;
+  background-color: var(--bg-card);
+  border: 1px solid #2a2a2a;
+  border-radius: var(--border-radius);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  outline: none;
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+
+.search-bar__select:focus {
+  border-color: var(--accent-gold);
+}
+
+.search-bar__count {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+/* ===========================
+   Restaurant Grid
+   =========================== */
+.restaurant-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 20px;
+}
+
+.restaurant-grid__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  background-color: var(--bg-card);
+  border-radius: var(--border-radius-lg);
+  border: 1px dashed #333333;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+/* ===========================
+   Restaurant Thumbnail
+   =========================== */
+.restaurant-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--border-radius);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.restaurant-thumb__letter {
+  color: rgba(255, 255, 255, 0.9);
+  font-family: var(--font-heading);
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+}
+
+/* ===========================
+   Restaurant Card
+   =========================== */
+.restaurant-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px;
+  background-color: var(--bg-card);
+  border: 1px solid #2a2a2a;
+  border-radius: var(--border-radius-lg);
+  transition: border-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.restaurant-card:hover {
+  border-color: var(--accent-gold);
+  transform: translateY(-2px);
+}
+
+.restaurant-card__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.restaurant-card__header-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.restaurant-card__header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.restaurant-card__name {
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.restaurant-card__meta {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.restaurant-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.restaurant-card__release {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent-gold);
+}
+
+.restaurant-card__footer {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid #2a2a2a;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.restaurant-card__book-link {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent-gold);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  transition: color var(--transition-fast);
+}
+
+.restaurant-card__book-link:hover {
+  color: var(--accent-gold-hover);
+}
+
+/* Platform Badges */
+.restaurant-card__platform {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.platform-badge--resy {
+  background-color: rgba(232, 65, 65, 0.15);
+  color: #e84141;
+}
+
+.platform-badge--tock {
+  background-color: rgba(147, 51, 234, 0.15);
+  color: #9333ea;
+}
+
+.platform-badge--opentable {
+  background-color: rgba(218, 55, 67, 0.15);
+  color: #da3743;
+}
+
+/* ===========================
+   Page Header Row
+   =========================== */
+.page-header__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+/* ===========================
+   Tab Bar
+   =========================== */
+.tab-bar {
+  display: flex;
+  gap: 0;
+  margin-bottom: 24px;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.tab-bar__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.tab-bar__tab:hover {
+  color: var(--text-primary);
+}
+
+.tab-bar__tab--active {
+  color: var(--accent-gold);
+  border-bottom-color: var(--accent-gold);
+}
+
+.tab-bar__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  background-color: var(--accent-gold);
+  color: #0a0a0a;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 9999px;
+}
+
+/* ===========================
+   Wizard Overlay & Modal
+   =========================== */
+.wizard-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+}
+
+.wizard-modal {
+  width: 560px;
+  max-width: 90vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-card);
+  border: 1px solid #2a2a2a;
+  border-radius: var(--border-radius-lg);
+  overflow: hidden;
+}
+
+.wizard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.wizard-header__title {
+  font-family: var(--font-heading);
+  font-size: 1.4rem;
+  color: var(--text-primary);
+}
+
+.wizard-header__close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+  transition: color var(--transition-fast);
+}
+
+.wizard-header__close:hover {
+  color: var(--text-primary);
+}
+
+.wizard-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+.wizard-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.wizard-footer__spacer {
+  flex: 1;
+}
+
+/* ===========================
+   Wizard Step Indicator
+   =========================== */
+.wizard-steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 16px 24px;
+  border-bottom: 1px solid #1a1a1a;
+}
+
+.wizard-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.wizard-step__dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background-color: #2a2a2a;
+  color: var(--text-muted);
+  transition: all var(--transition-fast);
+}
+
+.wizard-step--active .wizard-step__dot {
+  background-color: var(--accent-gold);
+  color: #0a0a0a;
+}
+
+.wizard-step--completed .wizard-step__dot {
+  background-color: var(--accent-gold);
+  color: #0a0a0a;
+}
+
+.wizard-step__label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.wizard-step--active .wizard-step__label {
+  color: var(--accent-gold);
+}
+
+.wizard-step--completed .wizard-step__label {
+  color: var(--text-secondary);
+}
+
+.wizard-step__connector {
+  width: 32px;
+  height: 2px;
+  background-color: #2a2a2a;
+  margin: 0 8px;
+  margin-bottom: 22px;
+}
+
+.wizard-step__connector--filled {
+  background-color: var(--accent-gold);
+}
+
+/* ===========================
+   Wizard Buttons
+   =========================== */
+.wizard-btn {
+  padding: 10px 20px;
+  border-radius: var(--border-radius);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border: none;
+}
+
+.wizard-btn--primary {
+  background-color: var(--accent-gold);
+  color: #0a0a0a;
+}
+
+.wizard-btn--primary:hover:not(:disabled) {
+  background-color: var(--accent-gold-hover);
+}
+
+.wizard-btn--primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.wizard-btn--secondary {
+  background-color: transparent;
+  color: var(--text-secondary);
+  border: 1px solid #2a2a2a;
+}
+
+.wizard-btn--secondary:hover {
+  color: var(--text-primary);
+  border-color: #444;
+}
+
+/* ===========================
+   Wizard Form Elements
+   =========================== */
+.wizard-step-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.wizard-label {
+  font-family: var(--font-heading);
+  font-size: 1.1rem;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.wizard-hint {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.wizard-input {
+  width: 100%;
+  padding: 10px 14px;
+  background-color: var(--bg-elevated);
+  border: 1px solid #2a2a2a;
+  border-radius: var(--border-radius);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.wizard-input:focus {
+  border-color: var(--accent-gold);
+}
+
+.wizard-input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.7);
+}
+
+.wizard-validation-error {
+  font-size: 0.8rem;
+  color: var(--status-failed);
+}
+
+/* ===========================
+   Wizard Restaurant List
+   =========================== */
+.wizard-restaurant-list {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid #2a2a2a;
+  border-radius: var(--border-radius);
+}
+
+.wizard-restaurant-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+  border-bottom: 1px solid #1a1a1a;
+}
+
+.wizard-restaurant-item__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.wizard-restaurant-item:last-child {
+  border-bottom: none;
+}
+
+.wizard-restaurant-item:hover {
+  background-color: var(--bg-elevated);
+}
+
+.wizard-restaurant-item--selected {
+  background-color: rgba(212, 175, 55, 0.1);
+  border-left: 3px solid var(--accent-gold);
+}
+
+.wizard-restaurant-item__name {
+  font-family: var(--font-heading);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.wizard-restaurant-item__meta {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.wizard-restaurant-list__empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* ===========================
+   Time Slot Grid
+   =========================== */
+.time-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.time-slot {
+  padding: 10px 8px;
+  background-color: var(--bg-elevated);
+  border: 1px solid #2a2a2a;
+  border-radius: var(--border-radius);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+  transition: all var(--transition-fast);
+}
+
+.time-slot:hover {
+  border-color: var(--accent-gold);
+  color: var(--text-primary);
+}
+
+.time-slot--selected {
+  background-color: rgba(212, 175, 55, 0.15);
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
+  font-weight: 600;
+}
+
+/* ===========================
+   Wizard Review
+   =========================== */
+.wizard-review {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid #2a2a2a;
+  border-radius: var(--border-radius);
+  overflow: hidden;
+}
+
+.wizard-review__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #1a1a1a;
+}
+
+.wizard-review__row:last-child {
+  border-bottom: none;
+}
+
+.wizard-review__label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.wizard-review__value {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  font-weight: 500;
+  text-align: right;
+  max-width: 60%;
+}
+
+/* ===========================
+   Active Jobs Grid
+   =========================== */
+.active-jobs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 20px;
+}
+
+.active-jobs-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  background-color: var(--bg-card);
+  border-radius: var(--border-radius-lg);
+  border: 1px dashed #333333;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+/* ===========================
+   Job Card
+   =========================== */
+.job-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px;
+  background-color: var(--bg-card);
+  border: 1px solid #2a2a2a;
+  border-radius: var(--border-radius-lg);
+  transition: border-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.job-card:hover {
+  border-color: var(--accent-gold);
+  transform: translateY(-2px);
+}
+
+.job-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.job-card__restaurant {
+  font-family: var(--font-heading);
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.job-card__date {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.job-card__slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.job-card__slot-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  background-color: rgba(212, 175, 55, 0.1);
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--accent-gold);
+}
+
+.job-card__details {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.job-card__party {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.job-card__created {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.job-card__actions {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.job-card__cancel-btn {
+  padding: 6px 14px;
+  background: none;
+  border: 1px solid #444;
+  border-radius: var(--border-radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.job-card__cancel-btn:hover {
+  border-color: var(--status-failed);
+  color: var(--status-failed);
+}
+
+/* ===========================
+   Status Badges
+   =========================== */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.status-badge--pending {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: var(--status-pending);
+}
+
+.status-badge--monitoring {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: var(--status-monitoring);
+}
+
+.status-badge--booked {
+  background-color: rgba(34, 197, 94, 0.15);
+  color: var(--status-booked);
+}
+
+.status-badge--failed {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: var(--status-failed);
+}
+
+.status-badge--cancelled {
+  background-color: rgba(100, 100, 100, 0.15);
+  color: #888;
+}
+
+/* ===========================
+   Booking History Table
+   =========================== */
+.history-table-wrapper {
+  overflow-x: auto;
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.history-table th {
+  text-align: left;
+  padding: 12px 16px;
+  background-color: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid #2a2a2a;
+  white-space: nowrap;
+}
+
+.history-table td {
+  padding: 12px 16px;
+  color: var(--text-primary);
+  border-bottom: 1px solid #1a1a1a;
+  white-space: nowrap;
+}
+
+.history-table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* ===========================
+   Quick Watch Button
+   =========================== */
+.restaurant-card__quick-watch {
+  padding: 4px 12px;
+  background: none;
+  border: 1px solid var(--accent-gold);
+  border-radius: var(--border-radius-sm);
+  color: var(--accent-gold);
+  font-family: var(--font-body);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.restaurant-card__quick-watch:hover {
+  background-color: var(--accent-gold);
+  color: #0a0a0a;
+}
+
+/* ===========================
+   Enhanced Tab Bar (Pill Style)
+   =========================== */
+.tab-bar--enhanced {
+  background-color: var(--bg-card);
+  border: 1px solid #2a2a2a;
+  border-radius: var(--border-radius-lg);
+  border-bottom: none;
+  padding: 4px;
+  gap: 4px;
+  margin-bottom: 24px;
+}
+
+.tab-bar--enhanced .tab-bar__tab {
+  border-bottom: none;
+  border-radius: var(--border-radius);
+  padding: 10px 20px;
+  transition: all var(--transition-fast);
+}
+
+.tab-bar--enhanced .tab-bar__tab--active {
+  background-color: var(--accent-gold);
+  color: #0a0a0a;
+  border-bottom-color: transparent;
+}
+
+.tab-bar--enhanced .tab-bar__tab--active .tab-bar__count {
+  background-color: #0a0a0a;
+  color: var(--accent-gold);
+}
+
+/* ===========================
+   Empty State
+   =========================== */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 240px;
+  padding: 40px 24px;
+  background-color: var(--bg-card);
+  border-radius: var(--border-radius-lg);
+  border: 1px dashed #333333;
+  text-align: center;
+}
+
+.empty-state__icon {
+  font-size: 2rem;
+  color: var(--text-muted);
+}
+
+.empty-state__title {
+  font-family: var(--font-heading);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.empty-state__description {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  max-width: 360px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.empty-state__cta {
+  margin-top: 8px;
+}
+
+/* ===========================
+   Job Card Status Borders
+   =========================== */
+.job-card--pending {
+  border-left: 3px solid var(--status-pending);
+}
+
+.job-card--monitoring {
+  border-left: 3px solid var(--status-monitoring);
+}
+
+.job-card--booked {
+  border-left: 3px solid var(--status-booked);
+}
+
+.job-card--failed {
+  border-left: 3px solid var(--status-failed);
+}
+
+/* ===========================
+   Job Card Countdown
+   =========================== */
+.job-card__countdown {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent-gold);
+  margin-top: -6px;
+}
+
+/* ===========================
+   Sortable Table Headers
+   =========================== */
+.history-table__sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--transition-fast);
+}
+
+.history-table__sortable:hover {
+  color: var(--accent-gold);
+}
+
+.history-table__sort-arrow {
+  font-size: 0.65rem;
+  opacity: 0.6;
+}
+
+.history-table__sortable:hover .history-table__sort-arrow {
+  opacity: 1;
+}
+
+/* ===========================
+   Alternating Table Rows
+   =========================== */
+.history-table tbody tr:nth-child(even) {
+  background-color: rgba(255, 255, 255, 0.015);
+}
+
+/* ===========================
+   Quick Create Form
+   =========================== */
+.quick-create {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 20px;
+  background-color: var(--bg-card);
+  border: 1px solid #2a2a2a;
+  border-radius: var(--border-radius-lg);
+  margin-bottom: 24px;
+}
+
+.quick-create__label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.quick-create__fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.quick-create__fields .search-bar__select {
+  flex: 1 1 160px;
+}
+
+.quick-create__date {
+  flex: 0 1 160px;
+  padding: 10px 12px;
+}
+
+.quick-create__btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
