@@ -4,7 +4,9 @@ import { initDatabase, getRestaurants, getWatchJobs, getBookingHistory, createWa
 import { seedRestaurants } from './seed-data.js'
 import { fetchAllMissingImages } from './image-fetcher.js'
 import { saveCredential, getCredential, deleteCredential, getAllCredentialStatuses, markValidated } from './credentials.js'
-import { startScheduler, stopScheduler, getSchedulerStatus } from './scheduler.js'
+import { startScheduler, stopScheduler, getSchedulerStatus, resumeJob } from './scheduler.js'
+import { setNotificationWindow } from './notifications.js'
+import { createTray, updateContextMenu, destroyTray, createAppIcon } from './tray.js'
 import * as resyPlatform from './platforms/resy.js'
 import * as tockPlatform from './platforms/tock.js'
 import * as opentablePlatform from './platforms/opentable.js'
@@ -17,8 +19,9 @@ function createWindow() {
     height: 900,
     minWidth: 1024,
     minHeight: 700,
-    backgroundColor: '#0a0a0a',
+    backgroundColor: '#ffffff',
     title: 'NYC Elite Reservations',
+    icon: createAppIcon(),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -30,6 +33,14 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
     return { action: 'deny' }
+  })
+
+  // Minimize to tray instead of closing
+  mainWindow.on('close', (e) => {
+    if (!app.isQuitting) {
+      e.preventDefault()
+      mainWindow.hide()
+    }
   })
 
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -53,15 +64,21 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('db:create-watch-job', async (_, data) => {
-    return createWatchJob(data)
+    const result = createWatchJob(data)
+    updateContextMenu()
+    return result
   })
 
   ipcMain.handle('db:update-watch-job', async (_, id, fields) => {
-    return updateWatchJob(id, fields)
+    const result = updateWatchJob(id, fields)
+    updateContextMenu()
+    return result
   })
 
   ipcMain.handle('db:delete-watch-job', async (_, id) => {
-    return cancelWatchJob(id)
+    const result = cancelWatchJob(id)
+    updateContextMenu()
+    return result
   })
 
   ipcMain.handle('app:get-version', async () => {
@@ -115,6 +132,12 @@ function registerIpcHandlers() {
   ipcMain.handle('monitor:get-status', async () => {
     return getSchedulerStatus()
   })
+
+  ipcMain.handle('monitor:resume-job', async (_, jobId) => {
+    resumeJob(jobId)
+    updateContextMenu()
+    return { success: true }
+  })
 }
 
 app.whenReady().then(() => {
@@ -125,6 +148,9 @@ app.whenReady().then(() => {
 
   registerIpcHandlers()
   createWindow()
+
+  setNotificationWindow(mainWindow)
+  createTray(mainWindow)
 
   startScheduler(mainWindow)
 
@@ -144,13 +170,22 @@ app.whenReady().then(() => {
   }
 })
 
+app.on('before-quit', () => {
+  app.isQuitting = true
+})
+
 app.on('window-all-closed', async () => {
+  // On Windows, don't quit when all windows are closed if tray is active
+  // The 'close' handler on mainWindow hides instead of closing
+})
+
+app.on('quit', async () => {
   stopScheduler()
+  destroyTray()
   await Promise.allSettled([
     resyPlatform.closeBrowser(),
     tockPlatform.closeBrowser(),
     opentablePlatform.closeBrowser()
   ])
   closeDatabase()
-  app.quit()
 })

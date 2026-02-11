@@ -31,6 +31,22 @@ export default function CatalogPage() {
     return () => { if (unsub) unsub() }
   }, [])
 
+  // Keyboard shortcut: Ctrl+F focuses search, Escape closes wizard
+  useEffect(() => {
+    const handleFocusSearch = () => {
+      const input = document.querySelector('.search-bar__input')
+      if (input) input.focus()
+    }
+    const handleCloseModal = () => setWizardOpen(false)
+
+    window.addEventListener('app:focus-search', handleFocusSearch)
+    window.addEventListener('app:close-modal', handleCloseModal)
+    return () => {
+      window.removeEventListener('app:focus-search', handleFocusSearch)
+      window.removeEventListener('app:close-modal', handleCloseModal)
+    }
+  }, [])
+
   const filteredRestaurants = useMemo(() => {
     let result = allRestaurants
 

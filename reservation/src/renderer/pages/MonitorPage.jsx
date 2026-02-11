@@ -63,6 +63,25 @@ export default function MonitorPage() {
     return cleanup
   }, [])
 
+  // Listen for keyboard shortcuts
+  useEffect(() => {
+    const handleOpenWizard = () => setWizardOpen(true)
+    const handleFocusSearch = () => {
+      const input = document.querySelector('.search-bar__input')
+      if (input) input.focus()
+    }
+    const handleCloseModal = () => setWizardOpen(false)
+
+    window.addEventListener('app:open-wizard', handleOpenWizard)
+    window.addEventListener('app:focus-search', handleFocusSearch)
+    window.addEventListener('app:close-modal', handleCloseModal)
+    return () => {
+      window.removeEventListener('app:open-wizard', handleOpenWizard)
+      window.removeEventListener('app:focus-search', handleFocusSearch)
+      window.removeEventListener('app:close-modal', handleCloseModal)
+    }
+  }, [])
+
   const handleCancel = async (id) => {
     await invoke('db:delete-watch-job', id)
     const updated = await invoke('db:get-watch-jobs')

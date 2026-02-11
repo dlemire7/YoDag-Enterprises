@@ -110,10 +110,17 @@ export function createWatchJob({ restaurant_id, target_date, time_slots, party_s
   const id = uuidv4()
   const timeSlotsJson = JSON.stringify(time_slots || [])
 
+  // Auto-detect monitoring strategy from restaurant's reservation_release field
+  const restaurant = db.prepare('SELECT reservation_release FROM restaurants WHERE id = ?').get(restaurant_id)
+  const releaseStr = restaurant?.reservation_release || ''
+  const isParseable = /^\d+\s*(days?|weeks?)\s*ahead/i.test(releaseStr)
+  const strategy = isParseable ? 'release_time' : 'continuous'
+  const pollInterval = isParseable ? 5 : 30
+
   db.prepare(`
-    INSERT INTO watch_jobs (id, restaurant_id, target_date, time_slots, party_size, status, priority, monitoring_strategy)
-    VALUES (?, ?, ?, ?, ?, 'pending', ?, 'continuous')
-  `).run(id, restaurant_id, target_date, timeSlotsJson, party_size || 2, priority || 'normal')
+    INSERT INTO watch_jobs (id, restaurant_id, target_date, time_slots, party_size, status, priority, monitoring_strategy, poll_interval_sec)
+    VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+  `).run(id, restaurant_id, target_date, timeSlotsJson, party_size || 2, priority || 'normal', strategy, pollInterval)
 
   return db.prepare(`
     SELECT wj.*, r.name as restaurant_name, r.platform as restaurant_platform
@@ -124,7 +131,7 @@ export function createWatchJob({ restaurant_id, target_date, time_slots, party_s
 }
 
 export function updateWatchJob(id, fields) {
-  const allowed = ['target_date', 'time_slots', 'party_size', 'status', 'priority', 'booked_at', 'confirmation_code']
+  const allowed = ['target_date', 'time_slots', 'party_size', 'status', 'priority', 'booked_at', 'confirmation_code', 'monitoring_strategy', 'poll_interval_sec']
   const updates = []
   const values = []
 
@@ -176,7 +183,7 @@ export function updateRestaurantImage(id, imageUrl) {
 
 export function getActiveWatchJobs() {
   return db.prepare(`
-    SELECT wj.*, r.name as restaurant_name, r.platform as restaurant_platform, r.url, r.venue_id
+    SELECT wj.*, r.name as restaurant_name, r.platform as restaurant_platform, r.url, r.venue_id, r.reservation_release
     FROM watch_jobs wj
     LEFT JOIN restaurants r ON wj.restaurant_id = r.id
     WHERE wj.status IN ('pending', 'monitoring')

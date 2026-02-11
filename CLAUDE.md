@@ -52,9 +52,29 @@ Schema migrations run in `migrateSchema()` via ALTER TABLE checks.
 **Scheduler** (`src/main/scheduler.js`):
 - Starts on app ready, ticks every 10 seconds
 - Queries DB for active watch jobs (status = pending/monitoring)
-- Respects per-job `poll_interval_sec` (default 30s) via in-memory `lastPollTime` map
-- Max 3 concurrent API calls to avoid rate limiting
+- Respects per-job `poll_interval_sec` via in-memory `lastPollTime` map
+- Max 10 concurrent API calls
+- Two monitoring strategies: `continuous` (30s default) and `release_time` (aggressive 4s polling in 60s window before calculated release time, falls back to 30s after 10 minutes)
+- `parseReleaseSchedule(releaseStr, targetDate)` — parses "N days ahead" / "N weeks ahead" into release Date
+- `getEffectiveInterval(job)` — returns Infinity (skip), 4s (sniping), or 30s based on strategy and current time
+- Exponential backoff on transient errors via in-memory `retryCount` Map (base * 2^n for server errors, base * 3^n for rate limits, capped at 5 minutes)
+- CAPTCHA detection: pauses job, sends desktop notification + IPC event `monitor:captcha-required`
+- Booking conflict recovery: detects "slot taken" errors, logs as `conflict` status, resets poll timer for immediate retry
+- `resumeJob(jobId)` — resumes a paused job (resets status to monitoring, clears backoff)
 - Sends `monitor:job-update` IPC event to renderer on state changes
+
+**Notifications** (`src/main/notifications.js`):
+- `notifyBookingSuccess(restaurantName, date, time, confirmationCode)` — Windows toast + sound
+- `notifyBookingFailed(restaurantName, errorMsg)` — silent toast
+- `notifyCaptchaRequired(restaurantName)` — urgent toast + sound
+- Click on any notification focuses the main window
+
+**System Tray** (`src/main/tray.js`):
+- Gold diamond icon in system tray
+- Context menu: Open, active job count, Quit
+- Window close minimizes to tray (monitoring continues in background)
+- Double-click tray icon restores window
+- `app.isQuitting` flag controls whether close = hide or quit
 
 **Resy API Client** (`src/main/platforms/resy-api.js`):
 - Pure HTTP client (no Playwright), uses Node fetch()
@@ -66,13 +86,15 @@ Schema migrations run in `migrateSchema()` via ALTER TABLE checks.
 - `getPaymentMethod(authToken)` — GET /2/user → payment_method_id
 - `bookReservation(authToken, bookToken, paymentMethodId)` — POST /3/book
 
-**Job Status Flow**: `pending` → `monitoring` → `booked` (success) or `failed` (error/expired)
+**Job Status Flow**: `pending` → `monitoring` → `booked` (success) or `failed` (error/expired) or `paused` (CAPTCHA)
 
 **Error Handling**:
-- 401/403: Session expired → job failed, user must re-sign in
-- 429: Rate limited → back off, retry next tick
-- 500: Server error → retry next tick
+- 401/403: Session expired → job failed, desktop notification, user must re-sign in
+- 403/429 + CAPTCHA: Job paused, desktop notification, user must resolve manually then resume
+- 429: Rate limited → exponential backoff (3x multiplier, capped at 5 min)
+- 5xx: Server error → exponential backoff (2x multiplier, capped at 5 min)
 - Expired target_date → job auto-failed
+- Booking conflict (slot taken) → logged as `conflict`, immediate retry
 
 **Platform module** (`src/main/platforms/resy.js`):
 - `browserLogin()` — Playwright-based browser login flow
@@ -81,18 +103,20 @@ Schema migrations run in `migrateSchema()` via ALTER TABLE checks.
 
 ### IPC Channels
 
-Invoke (renderer → main): `db:get-restaurants`, `db:get-watch-jobs`, `db:get-booking-history`, `db:create-watch-job`, `db:update-watch-job`, `db:delete-watch-job`, `db:fetch-restaurant-images`, `app:get-version`, `credentials:get-all-statuses`, `credentials:delete`, `credentials:browser-login`, `monitor:get-status`
+Invoke (renderer → main): `db:get-restaurants`, `db:get-watch-jobs`, `db:get-booking-history`, `db:create-watch-job`, `db:update-watch-job`, `db:delete-watch-job`, `db:fetch-restaurant-images`, `app:get-version`, `credentials:get-all-statuses`, `credentials:delete`, `credentials:browser-login`, `monitor:get-status`, `monitor:resume-job`
 
-Receive (main → renderer): `images:progress`, `images:complete`, `monitor:job-update`
+Receive (main → renderer): `images:progress`, `images:complete`, `monitor:job-update`, `monitor:captcha-required`
 
 ### Key Files
 
 | File | Purpose |
 |------|---------|
-| `src/main/index.js` | Electron main process, IPC handlers, scheduler lifecycle |
+| `src/main/index.js` | Electron main process, IPC handlers, scheduler/tray lifecycle |
 | `src/main/database.js` | SQLite schema, migrations, all query functions |
 | `src/main/credentials.js` | Encrypted credential storage via safeStorage |
-| `src/main/scheduler.js` | Background polling engine for watch jobs |
+| `src/main/scheduler.js` | Background polling engine with release-time sniping, exponential backoff, CAPTCHA detection |
+| `src/main/notifications.js` | Desktop toast notifications + sound alerts |
+| `src/main/tray.js` | System tray icon, context menu, minimize-to-tray |
 | `src/main/platforms/resy-api.js` | Resy REST API client (pure HTTP) |
 | `src/main/platforms/resy.js` | Resy platform module (Playwright + API) |
 | `src/main/platforms/tock.js` | Tock platform module (login only) |
@@ -109,14 +133,16 @@ Receive (main → renderer): `images:progress`, `images:complete`, `monitor:job-
 2. **Phase 2**: Restaurant catalog with 40 NYC restaurants, images, search/filter
 3. **Phase 3**: Watch job creation (quick-create + wizard), booking history UI
 4. **Phase 4**: Credential management — Playwright browser login, encrypted storage
-5. **Phase 5**: Resy monitoring engine — scheduler, REST API client, auto-booking, real-time UI updates
+5. **Phase 5**: Resy monitoring engine — scheduler, REST API client, auto-booking, release-time sniping, exponential backoff, CAPTCHA detection, booking conflict recovery, desktop notifications, system tray, real-time UI updates
 
 ### Next Steps (Phase 6+)
 
 - Tock and OpenTable API clients + booking flows
-- Notification system (desktop notifications on successful booking)
-- Release-day sniping (schedule polls for exact release time)
-- Settings for poll intervals, max retries, booking preferences
+- Settings UI for poll intervals, max retries, booking preferences
+- Card hover animations, page transitions, status pulse effects
+- Keyboard shortcuts (Ctrl+N, Ctrl+F, Escape)
+- React error boundaries
+- Electron Forge packaging → Windows .exe installer
 
 ---
 

@@ -11,7 +11,9 @@ const validInvokeChannels = [
   'app:get-version',
   'credentials:get-all-statuses',
   'credentials:delete',
-  'credentials:browser-login'
+  'credentials:browser-login',
+  'monitor:get-status',
+  'monitor:resume-job'
 ]
 
 const validSendChannels = []
@@ -19,7 +21,8 @@ const validSendChannels = []
 const validReceiveChannels = [
   'images:progress',
   'images:complete',
-  'monitor:job-update'
+  'monitor:job-update',
+  'monitor:captcha-required'
 ]
 
 contextBridge.exposeInMainWorld('api', {

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useIpc } from '../hooks/useIpc'
 import WizardStepIndicator from './WizardStepIndicator'
 import RestaurantThumbnail from './RestaurantThumbnail'
@@ -102,6 +103,8 @@ export default function WatchJobWizard({ isOpen, onClose, onCreated, restaurants
   }
 
   if (!isOpen) return null
+
+  const portalRoot = document.body
 
   const renderStepContent = () => {
     switch (currentStep) {
@@ -225,7 +228,7 @@ export default function WatchJobWizard({ isOpen, onClose, onCreated, restaurants
     }
   }
 
-  return (
+  return createPortal(
     <div className="wizard-overlay" onClick={handleBackdropClick}>
       <div className="wizard-modal">
         <div className="wizard-header">
@@ -268,6 +271,7 @@ export default function WatchJobWizard({ isOpen, onClose, onCreated, restaurants
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    portalRoot
   )
 }
