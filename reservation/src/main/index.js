@@ -1,7 +1,13 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import path from 'path'
-import { initDatabase, getRestaurants, getWatchJobs, getBookingHistory, createWatchJob, updateWatchJob, cancelWatchJob, getDatabase, closeDatabase } from './database.js'
+import { initDatabase, getRestaurants, getWatchJobs, getBookingHistory, createWatchJob, updateWatchJob, cancelWatchJob, getDatabase, closeDatabase, getRestaurantsWithoutImages, updateRestaurantImage } from './database.js'
 import { seedRestaurants } from './seed-data.js'
+import { fetchAllMissingImages } from './image-fetcher.js'
+import { saveCredential, getCredential, deleteCredential, getAllCredentialStatuses, markValidated } from './credentials.js'
+import { startScheduler, stopScheduler, getSchedulerStatus } from './scheduler.js'
+import * as resyPlatform from './platforms/resy.js'
+import * as tockPlatform from './platforms/tock.js'
+import * as opentablePlatform from './platforms/opentable.js'
 
 let mainWindow = null
 
@@ -61,6 +67,54 @@ function registerIpcHandlers() {
   ipcMain.handle('app:get-version', async () => {
     return app.getVersion()
   })
+
+  ipcMain.handle('db:fetch-restaurant-images', async () => {
+    const missing = getRestaurantsWithoutImages()
+    if (missing.length === 0) return { fetched: 0, total: 0 }
+    const fetched = await fetchAllMissingImages(missing, updateRestaurantImage, (done, total, name) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('images:progress', { done, total, name })
+      }
+    })
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('images:complete')
+    }
+    return { fetched, total: missing.length }
+  })
+
+  // Credential Management
+  ipcMain.handle('credentials:get-all-statuses', async () => {
+    return getAllCredentialStatuses()
+  })
+
+  ipcMain.handle('credentials:delete', async (_, platform) => {
+    deleteCredential(platform)
+    return getAllCredentialStatuses()
+  })
+
+  ipcMain.handle('credentials:browser-login', async (_, platform, method) => {
+    const platformModules = {
+      Resy: resyPlatform,
+      Tock: tockPlatform,
+      OpenTable: opentablePlatform
+    }
+
+    const mod = platformModules[platform]
+    if (!mod) {
+      return { success: false, error: `Unknown platform: ${platform}` }
+    }
+
+    const result = await mod.browserLogin()
+    if (result.success) {
+      saveCredential(platform, result.session)
+      markValidated(platform)
+    }
+    return result
+  })
+
+  ipcMain.handle('monitor:get-status', async () => {
+    return getSchedulerStatus()
+  })
 }
 
 app.whenReady().then(() => {
@@ -71,9 +125,32 @@ app.whenReady().then(() => {
 
   registerIpcHandlers()
   createWindow()
+
+  startScheduler(mainWindow)
+
+  // Fetch missing restaurant images in background
+  const missing = getRestaurantsWithoutImages()
+  if (missing.length > 0) {
+    console.log(`Fetching images for ${missing.length} restaurants in background...`)
+    fetchAllMissingImages(missing, updateRestaurantImage, (done, total, name) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('images:progress', { done, total, name })
+      }
+    }).then(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('images:complete')
+      }
+    })
+  }
 })
 
-app.on('window-all-closed', () => {
+app.on('window-all-closed', async () => {
+  stopScheduler()
+  await Promise.allSettled([
+    resyPlatform.closeBrowser(),
+    tockPlatform.closeBrowser(),
+    opentablePlatform.closeBrowser()
+  ])
   closeDatabase()
   app.quit()
 })

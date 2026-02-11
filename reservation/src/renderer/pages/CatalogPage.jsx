@@ -6,7 +6,7 @@ import RestaurantGrid from '../components/RestaurantGrid'
 import WatchJobWizard from '../components/WatchJobWizard'
 
 export default function CatalogPage() {
-  const { invoke } = useIpc()
+  const { invoke, on } = useIpc()
   const [allRestaurants, setAllRestaurants] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -16,11 +16,19 @@ export default function CatalogPage() {
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardRestaurant, setWizardRestaurant] = useState(null)
 
+  const refreshRestaurants = () => {
+    invoke('db:get-restaurants').then(rows => {
+      setAllRestaurants(rows || [])
+    })
+  }
+
   useEffect(() => {
     invoke('db:get-restaurants').then(rows => {
       setAllRestaurants(rows || [])
       setLoading(false)
     })
+    const unsub = on('images:complete', refreshRestaurants)
+    return () => { if (unsub) unsub() }
   }, [])
 
   const filteredRestaurants = useMemo(() => {

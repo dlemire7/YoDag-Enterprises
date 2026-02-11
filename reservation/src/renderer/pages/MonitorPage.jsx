@@ -55,6 +55,14 @@ export default function MonitorPage() {
     fetchData()
   }, [])
 
+  // Listen for real-time job updates from the scheduler
+  useEffect(() => {
+    const cleanup = window.api.on('monitor:job-update', () => {
+      fetchData()
+    })
+    return cleanup
+  }, [])
+
   const handleCancel = async (id) => {
     await invoke('db:delete-watch-job', id)
     const updated = await invoke('db:get-watch-jobs')

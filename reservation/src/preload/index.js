@@ -7,12 +7,20 @@ const validInvokeChannels = [
   'db:create-watch-job',
   'db:update-watch-job',
   'db:delete-watch-job',
-  'app:get-version'
+  'db:fetch-restaurant-images',
+  'app:get-version',
+  'credentials:get-all-statuses',
+  'credentials:delete',
+  'credentials:browser-login'
 ]
 
 const validSendChannels = []
 
-const validReceiveChannels = []
+const validReceiveChannels = [
+  'images:progress',
+  'images:complete',
+  'monitor:job-update'
+]
 
 contextBridge.exposeInMainWorld('api', {
   invoke: (channel, ...args) => {

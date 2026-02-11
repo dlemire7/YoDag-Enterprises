@@ -13,6 +13,7 @@ export function initDatabase() {
   db.pragma('foreign_keys = ON')
 
   createTables()
+  migrateSchema()
   return dbPath
 }
 
@@ -72,6 +73,18 @@ function createTables() {
   `)
 }
 
+function migrateSchema() {
+  const columns = db.pragma('table_info(restaurants)')
+  const hasImageUrl = columns.some(col => col.name === 'image_url')
+  if (!hasImageUrl) {
+    db.exec('ALTER TABLE restaurants ADD COLUMN image_url TEXT')
+  }
+  const hasVenueId = columns.some(col => col.name === 'venue_id')
+  if (!hasVenueId) {
+    db.exec('ALTER TABLE restaurants ADD COLUMN venue_id TEXT')
+  }
+}
+
 export function getRestaurants() {
   return db.prepare('SELECT * FROM restaurants ORDER BY name').all()
 }
@@ -111,7 +124,7 @@ export function createWatchJob({ restaurant_id, target_date, time_slots, party_s
 }
 
 export function updateWatchJob(id, fields) {
-  const allowed = ['target_date', 'time_slots', 'party_size', 'status', 'priority']
+  const allowed = ['target_date', 'time_slots', 'party_size', 'status', 'priority', 'booked_at', 'confirmation_code']
   const updates = []
   const values = []
 
@@ -151,6 +164,41 @@ export function cancelWatchJob(id) {
     LEFT JOIN restaurants r ON wj.restaurant_id = r.id
     WHERE wj.id = ?
   `).get(id)
+}
+
+export function getRestaurantsWithoutImages() {
+  return db.prepare('SELECT id, name FROM restaurants WHERE image_url IS NULL ORDER BY id').all()
+}
+
+export function updateRestaurantImage(id, imageUrl) {
+  db.prepare('UPDATE restaurants SET image_url = ? WHERE id = ?').run(imageUrl, id)
+}
+
+export function getActiveWatchJobs() {
+  return db.prepare(`
+    SELECT wj.*, r.name as restaurant_name, r.platform as restaurant_platform, r.url, r.venue_id
+    FROM watch_jobs wj
+    LEFT JOIN restaurants r ON wj.restaurant_id = r.id
+    WHERE wj.status IN ('pending', 'monitoring')
+    ORDER BY wj.created_at ASC
+  `).all()
+}
+
+export function getRestaurantById(id) {
+  return db.prepare('SELECT * FROM restaurants WHERE id = ?').get(id)
+}
+
+export function updateRestaurantVenueId(id, venueId) {
+  db.prepare('UPDATE restaurants SET venue_id = ? WHERE id = ?').run(venueId, id)
+}
+
+export function createBookingRecord({ watch_job_id, restaurant, date, time, party_size, platform, status, confirmation_code, attempt_log, error_details }) {
+  const id = uuidv4()
+  db.prepare(`
+    INSERT INTO booking_history (id, watch_job_id, restaurant, date, time, party_size, platform, status, confirmation_code, attempt_log, error_details)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, watch_job_id, restaurant, date, time, party_size, platform, status, confirmation_code || null, attempt_log || null, error_details || null)
+  return id
 }
 
 export function closeDatabase() {

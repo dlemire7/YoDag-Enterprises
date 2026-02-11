@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 
 const CUISINE_COLORS = [
   { keywords: ['french', 'european'], colors: ['#1a237e', '#283593'] },
@@ -30,10 +30,14 @@ const SIZES = { sm: 32, md: 48, lg: 64 }
 const FONT_SIZES = { sm: 14, md: 20, lg: 28 }
 
 export default function RestaurantThumbnail({ restaurant, size = 'md' }) {
+  const [imgFailed, setImgFailed] = useState(false)
   const [from, to] = getGradient(restaurant?.cuisine)
   const px = SIZES[size] || SIZES.md
   const fs = FONT_SIZES[size] || FONT_SIZES.md
   const letter = (restaurant?.name || '?')[0].toUpperCase()
+  const imageUrl = restaurant?.image_url
+
+  const showImage = imageUrl && !imgFailed
 
   return (
     <div
@@ -42,12 +46,22 @@ export default function RestaurantThumbnail({ restaurant, size = 'md' }) {
         width: px,
         height: px,
         minWidth: px,
-        background: `linear-gradient(135deg, ${from}, ${to})`,
+        background: showImage ? 'none' : `linear-gradient(135deg, ${from}, ${to})`,
       }}
     >
-      <span className="restaurant-thumb__letter" style={{ fontSize: fs }}>
-        {letter}
-      </span>
+      {showImage ? (
+        <img
+          className="restaurant-thumb__img"
+          src={imageUrl}
+          alt={restaurant.name}
+          onError={() => setImgFailed(true)}
+          referrerPolicy="no-referrer"
+        />
+      ) : (
+        <span className="restaurant-thumb__letter" style={{ fontSize: fs }}>
+          {letter}
+        </span>
+      )}
     </div>
   )
 }

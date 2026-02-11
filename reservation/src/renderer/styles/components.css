@@ -199,6 +199,12 @@
   user-select: none;
 }
 
+.restaurant-thumb__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 /* ===========================
    Restaurant Card
    =========================== */
@@ -1125,4 +1131,262 @@
 .quick-create__btn {
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+/* ===========================
+   Credential Manager
+   =========================== */
+.credential-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.credential-manager__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--text-muted);
+}
+
+.credential-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  background-color: var(--bg-card);
+  border: 1px solid #2a2a2a;
+  border-radius: var(--border-radius-lg);
+  border-left: 3px solid var(--platform-color, #2a2a2a);
+  transition: border-color var(--transition-fast);
+}
+
+.credential-card:hover {
+  border-color: #444;
+  border-left-color: var(--platform-color, #444);
+}
+
+.credential-card__header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.credential-card__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--border-radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.credential-card__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.credential-card__name {
+  font-family: var(--font-heading);
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.credential-card__desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.credential-card__status {
+  flex-shrink: 0;
+}
+
+.credential-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.credential-status--validated {
+  background-color: rgba(34, 197, 94, 0.15);
+  color: var(--status-booked);
+}
+
+.credential-status--configured {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: var(--status-pending);
+}
+
+.credential-status--none {
+  background-color: rgba(100, 100, 100, 0.15);
+  color: #888;
+}
+
+.credential-card__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.credential-card__delete-btn {
+  padding: 6px 14px;
+  background: none;
+  border: 1px solid #444;
+  border-radius: var(--border-radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  margin-left: auto;
+}
+
+.credential-card__delete-btn:hover {
+  border-color: var(--status-failed);
+  color: var(--status-failed);
+}
+
+.credential-test-result {
+  padding: 10px 14px;
+  border-radius: var(--border-radius);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.credential-test-result--success {
+  background-color: rgba(34, 197, 94, 0.1);
+  color: var(--status-booked);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.credential-test-result--error {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: var(--status-failed);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.credential-card__methods {
+  display: flex;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.credential-method-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border: 1px solid #2a2a2a;
+  border-radius: var(--border-radius);
+  background-color: var(--bg-elevated);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.credential-method-btn:hover:not(:disabled) {
+  border-color: #555;
+  background-color: #222;
+}
+
+.credential-method-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.credential-method-btn--google {
+  border-color: rgba(66, 133, 244, 0.3);
+}
+
+.credential-method-btn--google:hover:not(:disabled) {
+  border-color: rgba(66, 133, 244, 0.6);
+  background-color: rgba(66, 133, 244, 0.08);
+}
+
+.credential-method-btn__icon {
+  flex-shrink: 0;
+}
+
+.credential-method-btn--phone {
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.credential-method-btn--phone:hover:not(:disabled) {
+  border-color: rgba(34, 197, 94, 0.6);
+  background-color: rgba(34, 197, 94, 0.08);
+}
+
+.credential-method-btn__phone-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.credential-card__signing-in {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background-color: rgba(212, 175, 55, 0.06);
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  border-radius: var(--border-radius);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.credential-signing-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #2a2a2a;
+  border-top-color: var(--accent-gold);
+  border-radius: 50%;
+  animation: credential-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes credential-spin {
+  to { transform: rotate(360deg); }
+}
+
+.credential-card__footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.credential-card__validated-at {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.credential-manager__note {
+  padding: 16px;
+  background-color: var(--bg-elevated);
+  border-radius: var(--border-radius);
+  border: 1px solid #2a2a2a;
+}
+
+.credential-manager__note p {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0;
 }

@@ -2,9 +2,129 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
+## Repository Structure
 
-A Flask web app for studying LearnedLeague trivia questions with spaced repetition. All app code lives in `ll-trivia/`.
+This repo contains two projects:
+- **ll-trivia/** — Flask trivia study app (LearnedLeague)
+- **reservation/** — Electron desktop app for NYC restaurant reservation monitoring & auto-booking
+
+---
+
+## Reservation App (reservation/)
+
+### Overview
+
+An Electron + React desktop app that monitors NYC restaurant reservation platforms (Resy, Tock, OpenTable) and auto-books when slots matching user criteria open up. Built with electron-vite, better-sqlite3, and Playwright for browser-based auth.
+
+### Running
+
+```bash
+cd reservation
+npm install
+npm run dev
+```
+
+### Architecture
+
+- **Main process**: `src/main/` — Electron main, SQLite database, credentials (encrypted via safeStorage), platform modules, scheduler
+- **Preload**: `src/preload/index.js` — IPC bridge with channel allowlists
+- **Renderer**: `src/renderer/` — React SPA with pages (Catalog, Monitor, Settings), components, hooks
+
+### Database (`src/main/database.js`)
+
+SQLite via better-sqlite3 with WAL mode. Tables:
+- **restaurants** — 40 NYC restaurants with name, neighborhood, borough, cuisine, stars, platform, url, image_url, venue_id
+- **watch_jobs** — Monitoring jobs with restaurant_id, target_date, time_slots (JSON), party_size, status, poll_interval_sec, booked_at, confirmation_code
+- **booking_history** — Booking attempts/successes with watch_job_id, restaurant, date, time, platform, status, confirmation_code, error_details
+- **credentials** — Encrypted platform session data (Resy/Tock/OpenTable)
+
+Schema migrations run in `migrateSchema()` via ALTER TABLE checks.
+
+### Credential Flow (Phase 4 — Complete)
+
+1. User clicks "Sign In" on Settings page → opens real Chrome via Playwright
+2. User logs into platform manually → `auth-detect.js` detects login completion
+3. Session (cookies + localStorage) encrypted via `safeStorage` and stored in credentials table
+4. `getCredential(platform)` decrypts and returns session object
+
+### Monitoring & Booking Engine (Phase 5 — Complete)
+
+**Scheduler** (`src/main/scheduler.js`):
+- Starts on app ready, ticks every 10 seconds
+- Queries DB for active watch jobs (status = pending/monitoring)
+- Respects per-job `poll_interval_sec` (default 30s) via in-memory `lastPollTime` map
+- Max 3 concurrent API calls to avoid rate limiting
+- Sends `monitor:job-update` IPC event to renderer on state changes
+
+**Resy API Client** (`src/main/platforms/resy-api.js`):
+- Pure HTTP client (no Playwright), uses Node fetch()
+- Required headers: `Authorization: ResyAPI api_key="VbWk7s3L4KiK5fzlO7JD3Q5EYolJI7n5"` + `X-Resy-Auth-Token: <token>`
+- `extractAuthToken(session)` — parses auth token from Playwright session localStorage
+- `resolveVenueId(authToken, url)` — resolves URL slug to venue_id (cached in DB)
+- `findAvailability(authToken, venueId, date, partySize)` — GET /4/find
+- `getBookingDetails(authToken, configId, day, partySize)` — POST /3/details → book_token
+- `getPaymentMethod(authToken)` — GET /2/user → payment_method_id
+- `bookReservation(authToken, bookToken, paymentMethodId)` — POST /3/book
+
+**Job Status Flow**: `pending` → `monitoring` → `booked` (success) or `failed` (error/expired)
+
+**Error Handling**:
+- 401/403: Session expired → job failed, user must re-sign in
+- 429: Rate limited → back off, retry next tick
+- 500: Server error → retry next tick
+- Expired target_date → job auto-failed
+
+**Platform module** (`src/main/platforms/resy.js`):
+- `browserLogin()` — Playwright-based browser login flow
+- `checkAvailability(session, venueId, date, partySize)` — delegates to resy-api.js
+- `bookSlot(session, configId, day, partySize)` — chains details → payment → book
+
+### IPC Channels
+
+Invoke (renderer → main): `db:get-restaurants`, `db:get-watch-jobs`, `db:get-booking-history`, `db:create-watch-job`, `db:update-watch-job`, `db:delete-watch-job`, `db:fetch-restaurant-images`, `app:get-version`, `credentials:get-all-statuses`, `credentials:delete`, `credentials:browser-login`, `monitor:get-status`
+
+Receive (main → renderer): `images:progress`, `images:complete`, `monitor:job-update`
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/main/index.js` | Electron main process, IPC handlers, scheduler lifecycle |
+| `src/main/database.js` | SQLite schema, migrations, all query functions |
+| `src/main/credentials.js` | Encrypted credential storage via safeStorage |
+| `src/main/scheduler.js` | Background polling engine for watch jobs |
+| `src/main/platforms/resy-api.js` | Resy REST API client (pure HTTP) |
+| `src/main/platforms/resy.js` | Resy platform module (Playwright + API) |
+| `src/main/platforms/tock.js` | Tock platform module (login only) |
+| `src/main/platforms/opentable.js` | OpenTable platform module (login only) |
+| `src/main/seed-data.js` | Seeds 40 NYC restaurants into DB |
+| `src/main/image-fetcher.js` | Fetches restaurant images |
+| `src/renderer/pages/MonitorPage.jsx` | Monitor & Book UI with real-time updates |
+| `src/renderer/pages/CatalogPage.jsx` | Restaurant catalog browser |
+| `src/renderer/pages/SettingsPage.jsx` | Credential management UI |
+
+### Completed Phases
+
+1. **Phase 1**: Project scaffolding, Electron + React + electron-vite setup
+2. **Phase 2**: Restaurant catalog with 40 NYC restaurants, images, search/filter
+3. **Phase 3**: Watch job creation (quick-create + wizard), booking history UI
+4. **Phase 4**: Credential management — Playwright browser login, encrypted storage
+5. **Phase 5**: Resy monitoring engine — scheduler, REST API client, auto-booking, real-time UI updates
+
+### Next Steps (Phase 6+)
+
+- Tock and OpenTable API clients + booking flows
+- Notification system (desktop notifications on successful booking)
+- Release-day sniping (schedule polls for exact release time)
+- Settings for poll intervals, max retries, booking preferences
+
+---
+
+## LearnedLeague Trivia App (ll-trivia/)
+
+### Overview
+
+A Flask web app for studying LearnedLeague trivia questions with spaced repetition.
 
 ## Running the App
 

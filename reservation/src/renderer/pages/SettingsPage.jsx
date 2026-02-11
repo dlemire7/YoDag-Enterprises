@@ -1,4 +1,5 @@
 import React from 'react'
+import CredentialManager from '../components/CredentialManager'
 
 export default function SettingsPage() {
   return (
@@ -7,9 +8,7 @@ export default function SettingsPage() {
         <h2 className="page-title">Settings</h2>
         <p className="page-subtitle">Platform credentials and preferences</p>
       </div>
-      <div className="page-body placeholder-content">
-        <p>Credential management will appear here in Phase 4.</p>
-      </div>
+      <CredentialManager />
     </div>
   )
 }
