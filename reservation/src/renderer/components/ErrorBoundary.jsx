@@ -3,7 +3,7 @@ import React from 'react'
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props)
-    this.state = { hasError: false, error: null }
+    this.state = { hasError: false, error: null, errorInfo: null, showDetails: false }
   }
 
   static getDerivedStateFromError(error) {
@@ -11,11 +11,22 @@ export default class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    console.error('[ErrorBoundary] Caught error:', error, errorInfo)
+    this.setState({ errorInfo })
+    console.error('[ErrorBoundary] Caught error:', error.message)
+    console.error('[ErrorBoundary] Component stack:', errorInfo?.componentStack)
   }
 
   handleRetry = () => {
-    this.setState({ hasError: false, error: null })
+    this.setState({ hasError: false, error: null, errorInfo: null, showDetails: false })
+  }
+
+  handleGoHome = () => {
+    this.setState({ hasError: false, error: null, errorInfo: null, showDetails: false })
+    window.location.hash = '#/catalog'
+  }
+
+  toggleDetails = () => {
+    this.setState(prev => ({ showDetails: !prev.showDetails }))
   }
 
   render() {
@@ -27,9 +38,27 @@ export default class ErrorBoundary extends React.Component {
           <p className="error-boundary__message">
             {this.state.error?.message || 'An unexpected error occurred. Please try again.'}
           </p>
-          <button className="error-boundary__retry" onClick={this.handleRetry}>
-            Try Again
-          </button>
+          <div className="error-boundary__actions">
+            <button className="error-boundary__retry" onClick={this.handleRetry}>
+              Try Again
+            </button>
+            <button className="error-boundary__home" onClick={this.handleGoHome}>
+              Go Home
+            </button>
+          </div>
+          {this.state.errorInfo && (
+            <>
+              <button className="error-boundary__details-toggle" onClick={this.toggleDetails}>
+                {this.state.showDetails ? 'Hide Details' : 'Show Details'}
+              </button>
+              {this.state.showDetails && (
+                <pre className="error-boundary__stack">
+                  {this.state.error?.stack}
+                  {this.state.errorInfo.componentStack}
+                </pre>
+              )}
+            </>
+          )}
         </div>
       )
     }

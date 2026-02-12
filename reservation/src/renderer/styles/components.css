@@ -34,8 +34,8 @@
 .status-dot--paused     { background-color: #888; }
 
 @keyframes pulse-monitoring {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5); }
-  50% { box-shadow: 0 0 0 6px rgba(59, 130, 246, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5), 0 0 0 0 rgba(59, 130, 246, 0.3); }
+  50% { box-shadow: 0 0 0 6px rgba(59, 130, 246, 0), 0 0 0 12px rgba(59, 130, 246, 0); }
 }
 
 @keyframes pulse-pending {
@@ -246,11 +246,12 @@
   border: none;
   border-radius: 0;
   cursor: pointer;
-  transition: opacity var(--transition-fast);
+  transition: transform var(--transition-normal), box-shadow var(--transition-normal);
 }
 
 .restaurant-card:hover {
-  opacity: 0.85;
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.08);
 }
 
 .restaurant-card__photo {
@@ -265,6 +266,11 @@
   height: 100%;
   object-fit: cover;
   display: block;
+  transition: transform var(--transition-normal);
+}
+
+.restaurant-card:hover .restaurant-card__photo img {
+  transform: scale(1.03);
 }
 
 .restaurant-card__photo-placeholder {
@@ -273,6 +279,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: transform var(--transition-normal);
+}
+
+.restaurant-card:hover .restaurant-card__photo-placeholder {
+  transform: scale(1.03);
 }
 
 .restaurant-card__photo-placeholder-letter {
@@ -829,7 +840,7 @@
   background-color: var(--bg-card);
   border: 1px solid #e8e8e8;
   border-radius: var(--border-radius-lg);
-  transition: border-color var(--transition-fast), transform var(--transition-fast);
+  transition: border-color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .job-card:hover {
@@ -1092,12 +1103,24 @@
   border-left: 3px solid var(--status-pending);
 }
 
+@keyframes monitoring-breathe {
+  0%, 100% { border-left-color: rgba(59, 130, 246, 0.6); }
+  50% { border-left-color: rgba(59, 130, 246, 1); }
+}
+
+@keyframes booked-flash {
+  0% { background-color: rgba(34, 197, 94, 0.12); }
+  100% { background-color: var(--bg-card); }
+}
+
 .job-card--monitoring {
   border-left: 3px solid var(--status-monitoring);
+  animation: monitoring-breathe 3s ease-in-out infinite;
 }
 
 .job-card--booked {
   border-left: 3px solid var(--status-booked);
+  animation: booked-flash 1.5s ease forwards;
 }
 
 .job-card--failed {
@@ -1212,12 +1235,14 @@
   border: 1px solid #e8e8e8;
   border-radius: var(--border-radius-lg);
   border-left: 3px solid var(--platform-color, #e8e8e8);
-  transition: border-color var(--transition-fast);
+  transition: border-color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .credential-card:hover {
   border-color: #cccccc;
   border-left-color: var(--platform-color, #cccccc);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.06);
 }
 
 .credential-card__header {
@@ -1561,7 +1586,6 @@
 }
 
 .error-boundary__retry {
-  margin-top: 8px;
   padding: 10px 24px;
   background-color: var(--accent-gold);
   color: #ffffff;
@@ -1580,4 +1604,129 @@
 
 .error-boundary__retry:active {
   transform: scale(0.97);
+}
+
+.error-boundary__actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.error-boundary__home {
+  padding: 10px 24px;
+  background-color: transparent;
+  color: var(--text-primary);
+  border: 1px solid #e8e8e8;
+  border-radius: var(--border-radius);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.error-boundary__home:hover {
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
+}
+
+.error-boundary__home:active {
+  transform: scale(0.97);
+}
+
+.error-boundary__details-toggle {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 4px 0;
+  transition: color var(--transition-fast);
+}
+
+.error-boundary__details-toggle:hover {
+  color: var(--text-primary);
+}
+
+.error-boundary__stack {
+  max-height: 240px;
+  overflow: auto;
+  padding: 16px;
+  background-color: var(--bg-elevated);
+  border: 1px solid #e8e8e8;
+  border-radius: var(--border-radius);
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+  width: 100%;
+  max-width: 560px;
+}
+
+/* ===========================
+   Shortcut Help Overlay
+   =========================== */
+.shortcut-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+}
+
+.shortcut-overlay__panel {
+  width: 400px;
+  max-width: 90vw;
+  background-color: var(--bg-card);
+  border: 1px solid #e8e8e8;
+  border-radius: var(--border-radius-lg);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.12);
+  padding: 24px;
+}
+
+.shortcut-overlay__title {
+  font-family: var(--font-heading);
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 20px;
+}
+
+.shortcut-overlay__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.shortcut-overlay__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.shortcut-overlay__kbd {
+  display: inline-block;
+  padding: 4px 10px;
+  background-color: var(--bg-elevated);
+  border: 1px solid #d0d0d0;
+  border-radius: var(--border-radius-sm);
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.shortcut-overlay__action {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
 }
