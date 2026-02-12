@@ -1,11 +1,12 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import path from 'path'
-import { initDatabase, getRestaurants, getWatchJobs, getBookingHistory, createWatchJob, updateWatchJob, cancelWatchJob, getDatabase, closeDatabase, getRestaurantsWithoutImages, updateRestaurantImage } from './database.js'
+import { initDatabase, getRestaurants, getWatchJobs, getBookingHistory, createWatchJob, updateWatchJob, cancelWatchJob, getDatabase, closeDatabase, getRestaurantsWithoutImages, updateRestaurantImage, getRestaurantById, updateRestaurantVenueId, createBookingRecord } from './database.js'
 import { seedRestaurants } from './seed-data.js'
 import { fetchAllMissingImages } from './image-fetcher.js'
 import { saveCredential, getCredential, deleteCredential, getAllCredentialStatuses, markValidated } from './credentials.js'
 import { startScheduler, stopScheduler, getSchedulerStatus, resumeJob } from './scheduler.js'
-import { setNotificationWindow } from './notifications.js'
+import { setNotificationWindow, notifyBookingSuccess } from './notifications.js'
+import { setSessionCookies, resolveVenueId, getBookingDetails, getPaymentMethod, bookReservation } from './platforms/resy-api.js'
 import { createTray, updateContextMenu, destroyTray, createAppIcon } from './tray.js'
 import * as resyPlatform from './platforms/resy.js'
 import * as tockPlatform from './platforms/tock.js'
@@ -137,6 +138,107 @@ function registerIpcHandlers() {
     resumeJob(jobId)
     updateContextMenu()
     return { success: true }
+  })
+
+  // Instant Availability Check
+  ipcMain.handle('resy:check-availability', async (_, { restaurant_id, date, party_size }) => {
+    try {
+      const restaurant = getRestaurantById(restaurant_id)
+      if (!restaurant) return { success: false, error: 'Restaurant not found' }
+      if (restaurant.platform !== 'Resy') return { unsupported: true }
+
+      const session = getCredential('Resy')
+      if (!session) return { noCredentials: true }
+
+      const authToken = resyPlatform.extractResyToken(session)
+      if (!authToken) return { success: false, error: 'Could not extract auth token', sessionExpired: true }
+
+      setSessionCookies(session)
+
+      let venueId = restaurant.venue_id
+      if (!venueId) {
+        try {
+          venueId = await resolveVenueId(authToken, restaurant.url)
+          updateRestaurantVenueId(restaurant.id, venueId)
+        } catch (err) {
+          return { success: false, error: `Could not resolve venue: ${err.message}` }
+        }
+      }
+
+      const slots = await resyPlatform.checkAvailability(session, venueId, date, party_size)
+      return { success: true, slots: slots || [] }
+    } catch (err) {
+      const statusCode = err.statusCode || err.status
+      if (statusCode === 401 || statusCode === 403) {
+        return { success: false, error: 'Session expired — please sign in again on Settings', sessionExpired: true }
+      }
+      if (statusCode === 429) {
+        return { success: false, error: 'Rate limited — please wait a moment and try again', rateLimited: true }
+      }
+      if (statusCode === 500) {
+        return { success: false, error: 'Resy server error — this restaurant may not have availability open yet. Try again shortly.' }
+      }
+      return { success: false, error: err.message || 'Failed to check availability' }
+    }
+  })
+
+  // Instant Book Now
+  ipcMain.handle('resy:book-now', async (_, { restaurant_id, config_id, date, party_size, time }) => {
+    try {
+      const restaurant = getRestaurantById(restaurant_id)
+      if (!restaurant) return { success: false, error: 'Restaurant not found' }
+
+      const session = getCredential('Resy')
+      if (!session) return { success: false, error: 'No Resy credentials found' }
+
+      const authToken = resyPlatform.extractResyToken(session)
+      if (!authToken) return { success: false, error: 'Could not extract auth token' }
+
+      setSessionCookies(session)
+
+      const bookToken = await getBookingDetails(authToken, config_id, date, party_size)
+      if (!bookToken) return { success: false, error: 'Could not get booking details — slot may no longer be available', conflict: true }
+
+      const paymentMethodId = await getPaymentMethod(authToken)
+      const result = await bookReservation(authToken, bookToken, paymentMethodId)
+
+      if (result.success) {
+        createBookingRecord({
+          watch_job_id: null,
+          restaurant: restaurant.name,
+          date,
+          time,
+          party_size,
+          platform: 'Resy',
+          status: 'success',
+          confirmation_code: result.confirmation_code || null,
+          attempt_log: 'Instant book via availability check',
+          error_details: null
+        })
+        notifyBookingSuccess(restaurant.name, date, time, result.confirmation_code)
+        return { success: true, confirmation_code: result.confirmation_code }
+      }
+
+      return { success: false, error: 'Booking request failed' }
+    } catch (err) {
+      const errMsg = err.message || 'Booking failed'
+      const conflict = /(taken|unavailable|no longer|already.*booked|slot.*gone)/i.test(errMsg)
+
+      createBookingRecord({
+        watch_job_id: null,
+        restaurant: (getRestaurantById(restaurant_id) || {}).name || 'Unknown',
+        date,
+        time,
+        party_size,
+        platform: 'Resy',
+        status: 'failed',
+        confirmation_code: null,
+        attempt_log: 'Instant book attempt failed',
+        error_details: errMsg
+      })
+
+      return { success: false, error: errMsg, conflict }
+    }
   })
 }
 

@@ -98,12 +98,41 @@ Schema migrations run in `migrateSchema()` via ALTER TABLE checks.
 
 **Platform module** (`src/main/platforms/resy.js`):
 - `browserLogin()` — Playwright-based browser login flow
-- `checkAvailability(session, venueId, date, partySize)` — delegates to resy-api.js
+- `checkAvailability(session, venueId, date, partySize)` — browser-based via Playwright `context.request` (bypasses Incapsula + DataDog RUM), falls back to resy-api.js direct fetch
 - `bookSlot(session, configId, day, partySize)` — chains details → payment → book
+- `extractResyToken(session)` — extracts auth token from session localStorage
+
+### Instant Availability & Book Now (Phase 7 — In Progress)
+
+Two new IPC handlers enable checking current availability and booking immediately without creating a watch job:
+
+**`resy:check-availability`** (params: `restaurant_id, date, party_size`):
+- Looks up restaurant, validates Resy platform, gets credentials + auth token
+- Resolves venue_id (cached in DB via `updateRestaurantVenueId`)
+- Calls `resyPlatform.checkAvailability()` → returns `{ success, slots }` or typed error flags (`noCredentials`, `sessionExpired`, `rateLimited`)
+
+**`resy:book-now`** (params: `restaurant_id, config_id, date, party_size, time`):
+- Chains `getBookingDetails()` → `getPaymentMethod()` → `bookReservation()`
+- On success: creates booking record (watch_job_id=null), sends desktop notification
+- On failure: records failed attempt, detects conflicts via regex `/(taken|unavailable|no longer|already.*booked|slot.*gone)/i`
+- Returns `{ success, confirmation_code }` or `{ success: false, error, conflict }`
+
+**Wizard integration** (`WatchJobWizard.jsx`):
+- Auto-checks availability when reaching Review step (step 5) for Resy restaurants
+- Shows loading spinner, error with retry, empty state, or scrollable slot list with Book Now buttons
+- Booking success shows green confirmation banner, auto-closes after 2.5s; footer switches to "Done" button
+- Booking conflict shows "Refresh Slots" button
+
+**Quick-create integration** (`MonitorPage.jsx`):
+- "Check Now" button appears next to "Quick Watch" for Resy restaurants
+- Inline availability results below form with Book Now per slot
+- Resets availability state when form inputs change
+
+**Known issue**: Resy's `/4/find` endpoint returns 500 via direct Node.js fetch (Incapsula WAF blocking). Browser-based `page.evaluate(fetch(...))` also fails due to DataDog RUM monkey-patching `fetch()`. Current fix uses Playwright `context.request` API which makes HTTP requests with browser cookies but bypasses page JS. Still testing whether this fully resolves the Incapsula issue.
 
 ### IPC Channels
 
-Invoke (renderer → main): `db:get-restaurants`, `db:get-watch-jobs`, `db:get-booking-history`, `db:create-watch-job`, `db:update-watch-job`, `db:delete-watch-job`, `db:fetch-restaurant-images`, `app:get-version`, `credentials:get-all-statuses`, `credentials:delete`, `credentials:browser-login`, `monitor:get-status`, `monitor:resume-job`
+Invoke (renderer → main): `db:get-restaurants`, `db:get-watch-jobs`, `db:get-booking-history`, `db:create-watch-job`, `db:update-watch-job`, `db:delete-watch-job`, `db:fetch-restaurant-images`, `app:get-version`, `credentials:get-all-statuses`, `credentials:delete`, `credentials:browser-login`, `monitor:get-status`, `monitor:resume-job`, `resy:check-availability`, `resy:book-now`
 
 Receive (main → renderer): `images:progress`, `images:complete`, `monitor:job-update`, `monitor:captcha-required`
 
@@ -134,14 +163,14 @@ Receive (main → renderer): `images:progress`, `images:complete`, `monitor:job-
 3. **Phase 3**: Watch job creation (quick-create + wizard), booking history UI
 4. **Phase 4**: Credential management — Playwright browser login, encrypted storage
 5. **Phase 5**: Resy monitoring engine — scheduler, REST API client, auto-booking, release-time sniping, exponential backoff, CAPTCHA detection, booking conflict recovery, desktop notifications, system tray, real-time UI updates
+6. **Phase 6**: UI polish — card hover animations, page transitions, keyboard shortcuts (Ctrl+N, Ctrl+F, Escape), React error boundaries
+7. **Phase 7** *(in progress)*: Instant availability check & Book Now — check current Resy availability from wizard Review step and quick-create form, book immediately without creating a watch job. Incapsula/DataDog WAF bypass still being tested.
 
-### Next Steps (Phase 6+)
+### Next Steps (Phase 8+)
 
+- Resolve Resy Incapsula/WAF blocking for `/4/find` availability checks
 - Tock and OpenTable API clients + booking flows
 - Settings UI for poll intervals, max retries, booking preferences
-- Card hover animations, page transitions, status pulse effects
-- Keyboard shortcuts (Ctrl+N, Ctrl+F, Escape)
-- React error boundaries
 - Electron Forge packaging → Windows .exe installer
 
 ---

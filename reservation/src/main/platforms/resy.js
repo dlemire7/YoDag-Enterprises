@@ -271,10 +271,108 @@ export async function createAuthenticatedContext(session) {
   return context
 }
 
+/**
+ * Check availability using a real browser context.
+ * This makes the /4/find request from within a Playwright page,
+ * which satisfies Incapsula/CDN bot detection.
+ */
 export async function checkAvailability(session, venueId, date, partySize) {
   const authToken = extractResyToken(session)
   if (!authToken) throw new Error('No auth token found in session')
+
+  // Try browser-based fetch first (bypasses Incapsula)
+  try {
+    const result = await browserApiFetch(session, venueId, date, partySize, authToken)
+    if (result !== null) return result
+  } catch (e) {
+    console.log(`[Resy] Browser-based fetch failed: ${e.message}, falling back to direct fetch`)
+  }
+
+  // Fallback to direct fetch
   return findAvailability(authToken, venueId, date, partySize)
+}
+
+/**
+ * Make the /4/find API call using Playwright's context.request API.
+ * This bypasses page JavaScript (avoids DataDog RUM fetch interception)
+ * while still including all Incapsula cookies from the browser context.
+ */
+async function browserApiFetch(session, venueId, date, partySize, authToken) {
+  let context = null
+  try {
+    context = await createAuthenticatedContext(session)
+
+    // First navigate a page to resy.com to trigger Incapsula JS challenges
+    const page = await context.newPage()
+    await page.goto('https://resy.com/', { waitUntil: 'domcontentloaded', timeout: 15000 })
+    await page.waitForTimeout(2000)
+    await page.close()
+
+    // Use context.request (Playwright APIRequestContext) — makes HTTP requests
+    // with the context's cookies but bypasses page JS (no DataDog interference)
+    const apiKey = 'VbWk7s3L4KiK5fzlO7JD3Q5EYolJI7n5'
+    const params = new URLSearchParams({
+      venue_id: String(venueId),
+      day: date,
+      party_size: String(partySize),
+      lat: '0',
+      long: '0'
+    })
+    const findUrl = `https://api.resy.com/4/find?${params}`
+
+    const res = await context.request.get(findUrl, {
+      headers: {
+        'Authorization': `ResyAPI api_key="${apiKey}"`,
+        'X-Resy-Auth-Token': authToken,
+        'X-Resy-Universal-Auth': authToken,
+        'Accept': 'application/json',
+        'Origin': 'https://resy.com',
+        'Referer': 'https://resy.com/'
+      }
+    })
+
+    await context.close()
+
+    if (!res.ok()) {
+      const body = await res.text().catch(() => '')
+      console.error(`[Resy] context.request /4/find → ${res.status()}: ${body.slice(0, 200)}`)
+      throw Object.assign(new Error(`Resy API error: ${res.status()}`), { statusCode: res.status() })
+    }
+
+    const data = await res.json()
+
+    // Parse slots from response
+    const slots = []
+    const venues = data?.results?.venues || []
+    for (const venue of venues) {
+      for (const slot of venue.slots || []) {
+        const config = slot.config || {}
+        const time = slot.date?.start
+        if (time && config.token) {
+          slots.push({
+            time: formatBrowserTime(time),
+            config_id: config.token,
+            type: config.type || 'Dining Room'
+          })
+        }
+      }
+    }
+
+    console.log(`[Resy] context.request /4/find → ${slots.length} slots found`)
+    return slots
+  } catch (e) {
+    if (context) await context.close().catch(() => {})
+    throw e
+  }
+}
+
+function formatBrowserTime(isoTime) {
+  try {
+    const date = new Date(isoTime)
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+  } catch {
+    return isoTime
+  }
 }
 
 export async function bookSlot(session, configId, day, partySize) {
@@ -293,7 +391,7 @@ export async function bookSlot(session, configId, day, partySize) {
  * Checks for our injected resy_auth_token first, then falls back to
  * the generic extractAuthToken patterns from resy-api.js.
  */
-function extractResyToken(session) {
+export function extractResyToken(session) {
   const origins = session?.storage?.origins || []
   for (const origin of origins) {
     for (const entry of origin.localStorage || []) {

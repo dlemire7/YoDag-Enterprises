@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useIpc } from '../hooks/useIpc'
 import WizardStepIndicator from './WizardStepIndicator'
@@ -28,6 +28,13 @@ export default function WatchJobWizard({ isOpen, onClose, onCreated, restaurants
   const [partySize, setPartySize] = useState(2)
   const [submitting, setSubmitting] = useState(false)
 
+  // Availability state
+  const [availabilityState, setAvailabilityState] = useState('idle')
+  const [availableSlots, setAvailableSlots] = useState([])
+  const [availabilityError, setAvailabilityError] = useState('')
+  const [bookingSlot, setBookingSlot] = useState(null)
+  const [bookingResult, setBookingResult] = useState(null)
+
   const startStep = skipStep1 ? 2 : 1
   const [currentStep, setCurrentStep] = useState(startStep)
 
@@ -43,6 +50,11 @@ export default function WatchJobWizard({ isOpen, onClose, onCreated, restaurants
       setPartySize(2)
       setSubmitting(false)
       setCurrentStep(skipStep1 ? 2 : 1)
+      setAvailabilityState('idle')
+      setAvailableSlots([])
+      setAvailabilityError('')
+      setBookingSlot(null)
+      setBookingResult(null)
     }
   }, [isOpen, preselectedRestaurant])
 
@@ -98,6 +110,77 @@ export default function WatchJobWizard({ isOpen, onClose, onCreated, restaurants
     }
   }
 
+  // Availability check
+  const checkAvailability = useCallback(async () => {
+    if (!selectedRestaurant || selectedRestaurant.platform !== 'Resy') return
+    setAvailabilityState('loading')
+    setAvailableSlots([])
+    setAvailabilityError('')
+    setBookingResult(null)
+    try {
+      const result = await invoke('resy:check-availability', {
+        restaurant_id: selectedRestaurant.id,
+        date: targetDate,
+        party_size: partySize
+      })
+      if (result.unsupported) {
+        setAvailabilityState('idle')
+        return
+      }
+      if (result.noCredentials) {
+        setAvailabilityState('error')
+        setAvailabilityError('Not signed into Resy — go to Settings to sign in')
+        return
+      }
+      if (result.success) {
+        setAvailableSlots(result.slots || [])
+        setAvailabilityState('loaded')
+      } else {
+        setAvailabilityState('error')
+        setAvailabilityError(result.error || 'Failed to check availability')
+      }
+    } catch (err) {
+      setAvailabilityState('error')
+      setAvailabilityError(err.message || 'Failed to check availability')
+    }
+  }, [selectedRestaurant, targetDate, partySize, invoke])
+
+  // Auto-check when reaching Review step for Resy restaurants
+  useEffect(() => {
+    if (currentStep === 5 && selectedRestaurant?.platform === 'Resy') {
+      checkAvailability()
+    }
+  }, [currentStep])
+
+  const handleBookNow = async (slot) => {
+    setBookingSlot(slot.config_id)
+    setBookingResult(null)
+    try {
+      const result = await invoke('resy:book-now', {
+        restaurant_id: selectedRestaurant.id,
+        config_id: slot.config_id,
+        date: targetDate,
+        party_size: partySize,
+        time: slot.time
+      })
+      setBookingResult(result)
+      if (result.success) {
+        setTimeout(() => {
+          onCreated()
+          onClose()
+        }, 2500)
+      }
+    } catch (err) {
+      setBookingResult({ success: false, error: err.message || 'Booking failed' })
+    } finally {
+      setBookingSlot(null)
+    }
+  }
+
+  const handleRetryAvailability = () => {
+    checkAvailability()
+  }
+
   const handleBackdropClick = (e) => {
     if (e.target === e.currentTarget) onClose()
   }
@@ -105,6 +188,106 @@ export default function WatchJobWizard({ isOpen, onClose, onCreated, restaurants
   if (!isOpen) return null
 
   const portalRoot = document.body
+  const isResy = selectedRestaurant?.platform === 'Resy'
+
+  const renderAvailabilitySection = () => {
+    if (!isResy) {
+      return (
+        <div className="availability-section">
+          <p className="wizard-hint">Instant availability check is not yet supported for {selectedRestaurant?.platform}. Create a watch job to monitor for openings.</p>
+        </div>
+      )
+    }
+
+    return (
+      <div className="availability-section">
+        <div className="availability-section__header">
+          <span className="wizard-label" style={{ margin: 0 }}>Current Availability</span>
+          {availabilityState !== 'loading' && (
+            <button
+              type="button"
+              className="availability-section__refresh"
+              onClick={handleRetryAvailability}
+              title="Refresh availability"
+            >
+              &#8635;
+            </button>
+          )}
+        </div>
+
+        {availabilityState === 'loading' && (
+          <div className="availability-section__loading">
+            <div className="credential-signing-spinner" />
+            <span>Checking availability...</span>
+          </div>
+        )}
+
+        {availabilityState === 'error' && (
+          <div className="availability-section__error">
+            <span>{availabilityError}</span>
+            <button
+              type="button"
+              className="wizard-btn wizard-btn--secondary"
+              onClick={handleRetryAvailability}
+              style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {availabilityState === 'loaded' && availableSlots.length === 0 && (
+          <div className="availability-section__empty">
+            No slots currently available for this date and party size. Create a watch job to get notified when one opens up.
+          </div>
+        )}
+
+        {availabilityState === 'loaded' && availableSlots.length > 0 && (
+          <>
+            <p className="wizard-hint">{availableSlots.length} slot{availableSlots.length !== 1 ? 's' : ''} available right now</p>
+            <div className="availability-slots">
+              {availableSlots.map((slot) => (
+                <div key={slot.config_id} className="availability-slot">
+                  <span className="availability-slot__time">{slot.time}</span>
+                  {slot.type && <span className="availability-slot__type">{slot.type}</span>}
+                  <button
+                    type="button"
+                    className="availability-slot__book-btn"
+                    disabled={!!bookingSlot}
+                    onClick={() => handleBookNow(slot)}
+                  >
+                    {bookingSlot === slot.config_id ? 'Booking...' : 'Book Now'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {bookingResult && !bookingResult.success && (
+          <div className="availability-section__booking-error">
+            <span>{bookingResult.error}</span>
+            {bookingResult.conflict && (
+              <button
+                type="button"
+                className="wizard-btn wizard-btn--secondary"
+                onClick={handleRetryAvailability}
+                style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+              >
+                Refresh Slots
+              </button>
+            )}
+          </div>
+        )}
+
+        {bookingResult?.success && (
+          <div className="availability-section__booking-success">
+            Booked! {bookingResult.confirmation_code && <>Confirmation: <strong>{bookingResult.confirmation_code}</strong></>}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   const renderStepContent = () => {
     switch (currentStep) {
@@ -220,6 +403,8 @@ export default function WatchJobWizard({ isOpen, onClose, onCreated, restaurants
                 <span className="wizard-review__value">{selectedRestaurant?.platform}</span>
               </div>
             </div>
+
+            {renderAvailabilitySection()}
           </div>
         )
 
@@ -259,6 +444,13 @@ export default function WatchJobWizard({ isOpen, onClose, onCreated, restaurants
               onClick={handleNext}
             >
               Next
+            </button>
+          ) : bookingResult?.success ? (
+            <button
+              className="wizard-btn wizard-btn--primary"
+              onClick={() => { onCreated(); onClose() }}
+            >
+              Done
             </button>
           ) : (
             <button

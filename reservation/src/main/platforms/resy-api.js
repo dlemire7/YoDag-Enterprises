@@ -1,13 +1,40 @@
 const BASE_URL = 'https://api.resy.com'
 const API_KEY = 'VbWk7s3L4KiK5fzlO7JD3Q5EYolJI7n5'
 
+// Module-level cookie store — populated from Playwright session
+let _cookieHeader = ''
+
+/**
+ * Set cookies from a saved Playwright session for use in API requests.
+ * Extracts cookies that match .resy.com or api.resy.com domains.
+ */
+export function setSessionCookies(session) {
+  const cookies = session?.cookies || []
+  const resyCookies = cookies.filter(c => {
+    const domain = (c.domain || '').toLowerCase()
+    return domain.includes('resy.com')
+  })
+  if (resyCookies.length > 0) {
+    _cookieHeader = resyCookies.map(c => `${c.name}=${c.value}`).join('; ')
+    console.log(`[Resy API] Loaded ${resyCookies.length} session cookies (${resyCookies.map(c => c.name).join(', ')})`)
+  }
+}
+
 function headers(authToken) {
-  return {
+  const h = {
     'Authorization': `ResyAPI api_key="${API_KEY}"`,
     'X-Resy-Auth-Token': authToken,
+    'X-Resy-Universal-Auth': authToken,
     'Content-Type': 'application/x-www-form-urlencoded',
-    'Accept': 'application/json'
+    'Accept': 'application/json',
+    'Origin': 'https://resy.com',
+    'Referer': 'https://resy.com/',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
   }
+  if (_cookieHeader) {
+    h['Cookie'] = _cookieHeader
+  }
+  return h
 }
 
 /**
@@ -39,7 +66,8 @@ export function extractAuthToken(session) {
 
 /**
  * Resolve a Resy restaurant URL slug to a numeric venue_id.
- * Tries the venue lookup API first, falls back to scraping the page.
+ * Tries multiple API endpoints, collects all candidate IDs, validates each
+ * with a test /4/find call, and returns the first one that works.
  */
 export async function resolveVenueId(authToken, url) {
   // Extract slug from URL like https://resy.com/cities/ny/laser-wolf
@@ -47,30 +75,101 @@ export async function resolveVenueId(authToken, url) {
   if (!match) throw new Error(`Cannot parse Resy URL: ${url}`)
 
   const [, city, slug] = match
+  const candidateIds = new Set()
 
-  // Try the venue search/lookup endpoint
+  // Map city codes to location_ids (Resy's internal city IDs)
+  const locationMap = { ny: '1', chi: '2', la: '3', dc: '4', atl: '5', sf: '6', aus: '7' }
+  const locationId = locationMap[city] || '1'
+
+  // Try multiple API endpoint patterns to collect candidate IDs
+  const endpoints = [
+    `${BASE_URL}/3/venue?url_slug=${slug}&location=${city}`,
+    `${BASE_URL}/2/venue?url_slug=${slug}&location_id=${locationId}`,
+    `${BASE_URL}/3/venue?url_slug=${slug}`,
+    `${BASE_URL}/2/config?url_slug=${slug}`,
+  ]
+
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(endpoint, { headers: headers(authToken) })
+      if (res.ok) {
+        const data = await res.json()
+        const ids = extractAllCandidateIds(data)
+        const shortEndpoint = endpoint.replace(BASE_URL, '')
+        if (ids.length > 0) {
+          console.log(`[Resy API] ${shortEndpoint} → candidate IDs: ${ids.join(', ')}`)
+          for (const id of ids) candidateIds.add(id)
+        } else {
+          console.log(`[Resy API] ${shortEndpoint} — ok but no IDs found, keys: ${Object.keys(data).slice(0, 10).join(', ')}`)
+          // Log deeper structure for debugging
+          const preview = JSON.stringify(data, null, 0).slice(0, 300)
+          console.log(`[Resy API] Response preview: ${preview}`)
+        }
+      } else {
+        console.log(`[Resy API] ${endpoint.replace(BASE_URL, '')} → ${res.status}`)
+      }
+    } catch (e) {
+      console.log(`[Resy API] ${endpoint.replace(BASE_URL, '')} → error: ${e.message}`)
+    }
+  }
+
+  // Try venue search
   try {
-    const searchUrl = `${BASE_URL}/3/venue?url_slug=${slug}&location=${city}`
+    const searchName = slug.replace(/-/g, ' ')
+    const searchUrl = `${BASE_URL}/3/venuesearch/search?query=${encodeURIComponent(searchName)}&geo={"latitude":40.7128,"longitude":-74.006}&types=["venue"]`
     const res = await fetch(searchUrl, { headers: headers(authToken) })
     if (res.ok) {
       const data = await res.json()
-      const venueId = data?.id?.resy
-      if (venueId) return String(venueId)
+      const hits = data?.search?.hits || data?.results || data?.hits || []
+      for (const hit of (Array.isArray(hits) ? hits : [])) {
+        const ids = extractAllCandidateIds(hit)
+        if (ids.length > 0) {
+          console.log(`[Resy API] Search hit → candidate IDs: ${ids.join(', ')}`)
+          for (const id of ids) candidateIds.add(id)
+        }
+      }
     }
-  } catch { /* fallback below */ }
+  } catch { /* continue */ }
 
-  // Fallback: fetch the restaurant page and extract venue_id from embedded data
-  try {
-    const pageRes = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-    })
-    const html = await pageRes.text()
-    // Look for venue_id in the page source
-    const idMatch = html.match(/"venue_id"\s*:\s*(\d+)/) || html.match(/"id"\s*:\s*(\d+).*?"resy"/)
-    if (idMatch) return idMatch[1]
-  } catch { /* give up */ }
+  // Use first candidate ID (skip validation — /4/find may fail for auth reasons unrelated to venue_id)
+  if (candidateIds.size > 0) {
+    const bestId = [...candidateIds][0]
+    console.log(`[Resy API] Resolved ${slug} → venue_id ${bestId} (candidates: ${[...candidateIds].join(', ')})`)
+    return String(bestId)
+  }
 
-  throw new Error(`Could not resolve venue_id for ${url}`)
+  throw new Error(`Could not resolve venue_id for ${url} — set venue_id manually in database`)
+}
+
+/**
+ * Extract ALL possible numeric IDs from a Resy API response object.
+ * Returns deduplicated array of numbers.
+ */
+function extractAllCandidateIds(data) {
+  if (!data || typeof data !== 'object') return []
+  const ids = new Set()
+
+  // Direct fields
+  if (data.venue_id) ids.add(Number(data.venue_id))
+  if (typeof data.id === 'number') ids.add(data.id)
+  if (data.id?.resy) ids.add(Number(data.id.resy))
+
+  // Nested under venue
+  if (data.venue?.id?.resy) ids.add(Number(data.venue.id.resy))
+  if (data.venue?.venue_id) ids.add(Number(data.venue.venue_id))
+  if (typeof data.venue?.id === 'number') ids.add(data.venue.id)
+
+  // Config
+  if (data.config?.venue_id) ids.add(Number(data.config.venue_id))
+
+  // location.id is sometimes the venue_id
+  if (data.location?.id) ids.add(Number(data.location.id))
+
+  // objectID from search results (Algolia)
+  if (data.objectID && /^\d+$/.test(String(data.objectID))) ids.add(Number(data.objectID))
+
+  // Remove NaN and 0
+  return [...ids].filter(n => n && !isNaN(n))
 }
 
 /**
@@ -86,7 +185,10 @@ export async function findAvailability(authToken, venueId, date, partySize) {
     long: '0'
   })
 
-  const res = await fetch(`${BASE_URL}/4/find?${params}`, {
+  const findUrl = `${BASE_URL}/4/find?${params}`
+  const tokenPreview = authToken ? `${authToken.slice(0, 6)}...${authToken.slice(-4)}` : 'NONE'
+  console.log(`[Resy API] Finding availability: venue_id=${venueId} date=${date} party=${partySize} token=${tokenPreview}`)
+  const res = await fetch(findUrl, {
     headers: headers(authToken)
   })
 
@@ -97,6 +199,38 @@ export async function findAvailability(authToken, venueId, date, partySize) {
     throw Object.assign(new Error('Rate limited'), { statusCode: 429 })
   }
   if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    const contentType = res.headers.get('content-type') || ''
+    console.error(`[Resy API] /4/find error ${res.status} (${contentType}): ${body.slice(0, 500)}`)
+
+    // One-time diagnostic: try with minimal headers (no Content-Type for GET)
+    if (!findAvailability._diagDone) {
+      findAvailability._diagDone = true
+      try {
+        const diagHeaders = {
+          'Authorization': `ResyAPI api_key="${API_KEY}"`,
+          'X-Resy-Auth-Token': authToken,
+          'Accept': 'application/json'
+        }
+        const diagRes = await fetch(findUrl, { headers: diagHeaders })
+        console.log(`[Resy API] DIAG minimal headers → ${diagRes.status}`)
+        if (!diagRes.ok) {
+          const diagBody = await diagRes.text().catch(() => '')
+          console.log(`[Resy API] DIAG body: ${diagBody.slice(0, 300)}`)
+        }
+        // Also try completely unauthenticated
+        const noAuthHeaders = { 'Authorization': `ResyAPI api_key="${API_KEY}"`, 'Accept': 'application/json' }
+        const noAuthRes = await fetch(findUrl, { headers: noAuthHeaders })
+        console.log(`[Resy API] DIAG no auth token → ${noAuthRes.status}`)
+        if (noAuthRes.ok) {
+          const noAuthData = await noAuthRes.json()
+          console.log(`[Resy API] DIAG no-auth response keys: ${Object.keys(noAuthData).join(', ')}`)
+        }
+      } catch (e) {
+        console.log(`[Resy API] DIAG error: ${e.message}`)
+      }
+    }
+
     throw Object.assign(new Error(`Resy API error: ${res.status}`), { statusCode: res.status })
   }
 

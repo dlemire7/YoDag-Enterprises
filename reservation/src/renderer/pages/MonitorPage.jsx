@@ -32,6 +32,13 @@ export default function MonitorPage() {
   const [quickTime, setQuickTime] = useState('')
   const [quickPartySize, setQuickPartySize] = useState('')
 
+  // Quick-create availability state
+  const [quickAvailState, setQuickAvailState] = useState('idle')
+  const [quickSlots, setQuickSlots] = useState([])
+  const [quickAvailError, setQuickAvailError] = useState('')
+  const [quickBookingSlot, setQuickBookingSlot] = useState(null)
+  const [quickBookingResult, setQuickBookingResult] = useState(null)
+
   // Search & filter state
   const [jobSearch, setJobSearch] = useState('')
   const [jobStatusFilter, setJobStatusFilter] = useState('')
@@ -112,6 +119,77 @@ export default function MonitorPage() {
   }
 
   const quickCreateReady = quickRestaurant && quickDate && quickTime && quickPartySize && quickDate >= getTomorrow()
+
+  const quickCheckReady = quickRestaurant && quickDate && quickPartySize && quickDate >= getTomorrow()
+  const selectedQuickRestaurant = restaurants.find(r => String(r.id) === quickRestaurant)
+  const isResyQuick = selectedQuickRestaurant?.platform === 'Resy'
+
+  // Reset quick availability when inputs change
+  useEffect(() => {
+    setQuickAvailState('idle')
+    setQuickSlots([])
+    setQuickAvailError('')
+    setQuickBookingSlot(null)
+    setQuickBookingResult(null)
+  }, [quickRestaurant, quickDate, quickPartySize])
+
+  const handleQuickCheckAvailability = async () => {
+    if (!selectedQuickRestaurant) return
+    setQuickAvailState('loading')
+    setQuickSlots([])
+    setQuickAvailError('')
+    setQuickBookingResult(null)
+    try {
+      const result = await invoke('resy:check-availability', {
+        restaurant_id: selectedQuickRestaurant.id,
+        date: quickDate,
+        party_size: parseInt(quickPartySize, 10)
+      })
+      if (result.noCredentials) {
+        setQuickAvailState('error')
+        setQuickAvailError('Not signed into Resy — go to Settings to sign in')
+        return
+      }
+      if (result.success) {
+        setQuickSlots(result.slots || [])
+        setQuickAvailState('loaded')
+      } else {
+        setQuickAvailState('error')
+        setQuickAvailError(result.error || 'Failed to check availability')
+      }
+    } catch (err) {
+      setQuickAvailState('error')
+      setQuickAvailError(err.message || 'Failed to check availability')
+    }
+  }
+
+  const handleQuickBookNow = async (slot) => {
+    setQuickBookingSlot(slot.config_id)
+    setQuickBookingResult(null)
+    try {
+      const result = await invoke('resy:book-now', {
+        restaurant_id: selectedQuickRestaurant.id,
+        config_id: slot.config_id,
+        date: quickDate,
+        party_size: parseInt(quickPartySize, 10),
+        time: slot.time
+      })
+      setQuickBookingResult(result)
+      if (result.success) {
+        fetchData()
+        setTimeout(() => {
+          setQuickRestaurant('')
+          setQuickDate('')
+          setQuickTime('')
+          setQuickPartySize('')
+        }, 3000)
+      }
+    } catch (err) {
+      setQuickBookingResult({ success: false, error: err.message || 'Booking failed' })
+    } finally {
+      setQuickBookingSlot(null)
+    }
+  }
 
   // Filtered jobs (exclude cancelled, apply search + status filter)
   const filteredJobs = useMemo(() => {
@@ -237,7 +315,82 @@ export default function MonitorPage() {
           >
             Quick Watch
           </button>
+          {isResyQuick && (
+            <button
+              className="wizard-btn wizard-btn--secondary quick-create__btn"
+              disabled={!quickCheckReady || quickAvailState === 'loading'}
+              onClick={handleQuickCheckAvailability}
+            >
+              {quickAvailState === 'loading' ? 'Checking...' : 'Check Now'}
+            </button>
+          )}
         </div>
+
+        {/* Inline availability results */}
+        {isResyQuick && quickAvailState === 'loading' && (
+          <div className="availability-section__loading">
+            <div className="credential-signing-spinner" />
+            <span>Checking availability...</span>
+          </div>
+        )}
+
+        {isResyQuick && quickAvailState === 'error' && (
+          <div className="availability-section__error">
+            <span>{quickAvailError}</span>
+            <button
+              className="wizard-btn wizard-btn--secondary"
+              onClick={handleQuickCheckAvailability}
+              style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {isResyQuick && quickAvailState === 'loaded' && quickSlots.length === 0 && (
+          <div className="availability-section__empty">
+            No slots currently available. Create a watch job to monitor for openings.
+          </div>
+        )}
+
+        {isResyQuick && quickAvailState === 'loaded' && quickSlots.length > 0 && (
+          <div className="availability-slots__grid">
+            {quickSlots.map((slot) => (
+              <div key={slot.config_id} className="availability-slot">
+                <span className="availability-slot__time">{slot.time}</span>
+                {slot.type && <span className="availability-slot__type">{slot.type}</span>}
+                <button
+                  className="availability-slot__book-btn"
+                  disabled={!!quickBookingSlot}
+                  onClick={() => handleQuickBookNow(slot)}
+                >
+                  {quickBookingSlot === slot.config_id ? 'Booking...' : 'Book Now'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {isResyQuick && quickBookingResult && !quickBookingResult.success && (
+          <div className="availability-section__booking-error">
+            <span>{quickBookingResult.error}</span>
+            {quickBookingResult.conflict && (
+              <button
+                className="wizard-btn wizard-btn--secondary"
+                onClick={handleQuickCheckAvailability}
+                style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+              >
+                Refresh Slots
+              </button>
+            )}
+          </div>
+        )}
+
+        {isResyQuick && quickBookingResult?.success && (
+          <div className="availability-section__booking-success">
+            Booked! {quickBookingResult.confirmation_code && <>Confirmation: <strong>{quickBookingResult.confirmation_code}</strong></>}
+          </div>
+        )}
       </div>
 
       <div className="tab-bar tab-bar--enhanced">

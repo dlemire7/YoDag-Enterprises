@@ -63,7 +63,7 @@ const RESTAURANTS = [
   { name: 'Lilia', neighborhood: 'Williamsburg', borough: 'Brooklyn', cuisine: 'Italian', stars: 0, criteria: '["eater"]', platform: 'Resy', reservation_release: '14 days ahead', url: 'https://resy.com/cities/ny/lilia' },
   { name: 'Lucali', neighborhood: 'Carroll Gardens', borough: 'Brooklyn', cuisine: 'Pizza', stars: 0, criteria: '["google"]', platform: 'OpenTable', reservation_release: 'Walk-in only', url: 'https://www.opentable.com/lucali' },
   { name: '4 Charles Prime Rib', neighborhood: 'West Village', borough: 'Manhattan', cuisine: 'Steakhouse', stars: 0, criteria: '["google","eater"]', platform: 'Resy', reservation_release: '30 days ahead', url: 'https://resy.com/cities/ny/4-charles-prime-rib' },
-  { name: 'Laser Wolf', neighborhood: 'Williamsburg', borough: 'Brooklyn', cuisine: 'Israeli', stars: 0, criteria: '["eater"]', platform: 'Resy', reservation_release: '14 days ahead', url: 'https://resy.com/cities/ny/laser-wolf' },
+  { name: 'Laser Wolf', neighborhood: 'Williamsburg', borough: 'Brooklyn', cuisine: 'Israeli', stars: 0, criteria: '["eater"]', platform: 'Resy', reservation_release: '14 days ahead', url: 'https://resy.com/cities/ny/laser-wolf-brooklyn' },
   { name: 'Double Chicken Please', neighborhood: 'Lower East Side', borough: 'Manhattan', cuisine: 'Bar / Asian Fusion', stars: 0, criteria: '["google"]', platform: 'Resy', reservation_release: '7 days ahead', url: 'https://resy.com/cities/ny/double-chicken-please' },
   { name: "Hart's", neighborhood: 'Bed-Stuy', borough: 'Brooklyn', cuisine: 'American / Seasonal', stars: 0, criteria: '["eater"]', platform: 'Resy', reservation_release: '14 days ahead', url: 'https://resy.com/cities/ny/harts' }
 ]

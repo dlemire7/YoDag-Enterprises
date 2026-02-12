@@ -83,6 +83,11 @@ function migrateSchema() {
   if (!hasVenueId) {
     db.exec('ALTER TABLE restaurants ADD COLUMN venue_id TEXT')
   }
+
+  // Fix Laser Wolf URL (slug is laser-wolf-brooklyn, not laser-wolf)
+  db.prepare(`UPDATE restaurants SET url = 'https://resy.com/cities/ny/laser-wolf-brooklyn' WHERE name = 'Laser Wolf' AND url != 'https://resy.com/cities/ny/laser-wolf-brooklyn'`).run()
+  // Clear known-bad venue_id (58848 was a content ID, not API venue_id)
+  db.prepare(`UPDATE restaurants SET venue_id = NULL WHERE name = 'Laser Wolf' AND venue_id = '58848'`).run()
 }
 
 export function getRestaurants() {

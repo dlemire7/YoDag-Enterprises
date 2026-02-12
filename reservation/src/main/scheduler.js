@@ -1,6 +1,7 @@
 import { getActiveWatchJobs, getRestaurantById, updateWatchJob, updateRestaurantVenueId, createBookingRecord } from './database.js'
 import { getCredential } from './credentials.js'
-import { extractAuthToken, resolveVenueId, findAvailability, getBookingDetails, getPaymentMethod, bookReservation } from './platforms/resy-api.js'
+import { resolveVenueId, getBookingDetails, getPaymentMethod, bookReservation, setSessionCookies } from './platforms/resy-api.js'
+import { extractResyToken, checkAvailability as browserCheckAvailability } from './platforms/resy.js'
 import { notifyBookingSuccess, notifyBookingFailed, notifyCaptchaRequired } from './notifications.js'
 
 const TICK_INTERVAL_MS = 10_000
@@ -88,18 +89,19 @@ function getEffectiveInterval(job) {
   const msUntilRelease = releaseTime.getTime() - now.getTime()
   const msAfterRelease = -msUntilRelease
 
-  // Before the 60-second pre-release window: don't poll yet
-  if (msUntilRelease > RELEASE_WINDOW_SEC * 1000) {
-    return Infinity // Skip this tick
+  // Release already passed (more than 10 minutes ago): continuous polling
+  if (msAfterRelease >= RELEASE_FALLBACK_AFTER_MIN * 60 * 1000) {
+    return 30_000
   }
 
-  // Within 60 seconds before release, or up to RELEASE_FALLBACK_AFTER_MIN after: aggressive polling
-  if (msAfterRelease < RELEASE_FALLBACK_AFTER_MIN * 60 * 1000) {
+  // Within 10 minutes after release or 60 seconds before: aggressive polling
+  if (msAfterRelease >= 0 || msUntilRelease <= RELEASE_WINDOW_SEC * 1000) {
     return RELEASE_AGGRESSIVE_INTERVAL_MS
   }
 
-  // After the fallback window: switch to continuous polling
-  return 30_000
+  // More than 60 seconds before release: poll at a slow background rate
+  // (so we can still detect cancellations that free up slots early)
+  return 120_000
 }
 
 async function tick() {
@@ -111,7 +113,15 @@ async function tick() {
     return
   }
 
-  if (jobs.length === 0) return
+  if (jobs.length === 0) {
+    // One-time log at startup to confirm scheduler can read DB
+    if (!tick._loggedEmpty) {
+      console.log('[Scheduler] No active jobs found (status: pending or monitoring)')
+      tick._loggedEmpty = true
+    }
+    return
+  }
+  tick._loggedEmpty = false // Reset so we log again if jobs disappear
 
   const now = Date.now()
 
@@ -120,7 +130,6 @@ async function tick() {
 
     const lastPoll = lastPollTime.get(job.id) || 0
     const interval = getEffectiveInterval(job)
-    if (interval === Infinity) continue // Not yet in release window
     if (now - lastPoll < interval) continue
 
     lastPollTime.set(job.id, now)
@@ -131,24 +140,37 @@ async function tick() {
 
 async function processJob(job) {
   const today = new Date().toISOString().split('T')[0]
+  const jobName = job.restaurant_name || job.name || `job ${job.id.slice(0, 8)}`
 
   try {
+    // Only Resy is supported for now — check BEFORE transitioning status
+    const platform = job.platform || job.restaurant_platform
+    if (platform !== 'Resy') {
+      // Don't spam logs — only log once per job
+      if (job.status === 'pending') {
+        console.log(`[Scheduler] ${jobName}: platform "${platform}" not yet supported, keeping as pending`)
+      }
+      return
+    }
+
     // Transition pending → monitoring
     if (job.status === 'pending') {
       updateWatchJob(job.id, { status: 'monitoring' })
+      console.log(`[Scheduler] ${jobName}: pending → monitoring`)
       sendUpdate()
     }
 
     // Check if target date has expired
     if (job.target_date < today) {
+      console.log(`[Scheduler] ${jobName}: target date ${job.target_date} expired`)
       updateWatchJob(job.id, { status: 'failed' })
       createBookingRecord({
         watch_job_id: job.id,
-        restaurant: job.restaurant_name || job.name,
+        restaurant: jobName,
         date: job.target_date,
         time: '',
         party_size: job.party_size,
-        platform: job.platform || job.restaurant_platform,
+        platform,
         status: 'failed',
         error_details: 'Target date has expired'
       })
@@ -157,20 +179,17 @@ async function processJob(job) {
       return
     }
 
-    // Only Resy is supported for now
-    const platform = job.platform || job.restaurant_platform
-    if (platform !== 'Resy') {
-      console.log(`[Scheduler] Skipping job ${job.id} — platform "${platform}" not yet supported`)
-      return
-    }
-
     // Get saved session
     const session = getCredential('Resy')
+    if (session) {
+      setSessionCookies(session)
+    }
     if (!session) {
+      console.log(`[Scheduler] ${jobName}: no Resy credentials found — failing job`)
       updateWatchJob(job.id, { status: 'failed' })
       createBookingRecord({
         watch_job_id: job.id,
-        restaurant: job.restaurant_name || job.name,
+        restaurant: jobName,
         date: job.target_date,
         time: '',
         party_size: job.party_size,
@@ -183,13 +202,14 @@ async function processJob(job) {
       return
     }
 
-    // Extract auth token
-    const authToken = extractAuthToken(session)
+    // Extract auth token — use Resy-specific extractor that checks for injected token
+    const authToken = extractResyToken(session)
     if (!authToken) {
+      console.log(`[Scheduler] ${jobName}: could not extract auth token from saved session — failing job`)
       updateWatchJob(job.id, { status: 'failed' })
       createBookingRecord({
         watch_job_id: job.id,
-        restaurant: job.restaurant_name || job.name,
+        restaurant: jobName,
         date: job.target_date,
         time: '',
         party_size: job.party_size,
@@ -223,29 +243,37 @@ async function processJob(job) {
       return
     }
 
-    // Find availability
+    // Find availability (uses Playwright browser context to bypass Incapsula CDN)
     let slots
     try {
-      slots = await findAvailability(authToken, venueId, job.target_date, job.party_size)
+      slots = await browserCheckAvailability(session, venueId, job.target_date, job.party_size)
     } catch (err) {
-      handleApiError(err, job)
+      handleApiError(err, job, jobName)
       return
     }
 
     // Successful API call — reset retry count
     retryCount.delete(job.id)
 
-    console.log(`[Scheduler] ${job.restaurant_name || restaurant?.name}: ${slots.length} slots found for ${job.target_date}`)
+    const desiredSlots = parseTimeSlots(job.time_slots)
+    console.log(`[Scheduler] ${jobName}: ${slots.length} slots on ${job.target_date}, looking for: [${desiredSlots.join(', ')}]`)
+    if (slots.length > 0 && slots.length <= 20) {
+      console.log(`[Scheduler] ${jobName}: available times: [${slots.map(s => s.time).join(', ')}]`)
+    }
 
     // Match against desired time slots
-    const desiredSlots = parseTimeSlots(job.time_slots)
     const matchingSlots = slots.filter(s => desiredSlots.some(d => timeMatches(s.time, d)))
 
-    if (matchingSlots.length === 0) return // No match — keep polling
+    if (matchingSlots.length === 0) {
+      if (slots.length > 0) {
+        console.log(`[Scheduler] ${jobName}: no time match — keep polling`)
+      }
+      return
+    }
 
     // Try to book the first matching slot
     const slot = matchingSlots[0]
-    console.log(`[Scheduler] Match found! Attempting to book ${slot.time} at ${job.restaurant_name || restaurant?.name}`)
+    console.log(`[Scheduler] ${jobName}: MATCH! Attempting to book ${slot.time}...`)
 
     try {
       const bookToken = await getBookingDetails(authToken, slot.config_id, job.target_date, job.party_size)
@@ -262,7 +290,7 @@ async function processJob(job) {
       })
       createBookingRecord({
         watch_job_id: job.id,
-        restaurant: job.restaurant_name || restaurant?.name,
+        restaurant: jobName,
         date: job.target_date,
         time: slot.time,
         party_size: job.party_size,
@@ -274,12 +302,12 @@ async function processJob(job) {
       sendUpdate()
 
       notifyBookingSuccess(
-        job.restaurant_name || restaurant?.name,
+        jobName,
         job.target_date,
         slot.time,
         result.confirmation_code || ''
       )
-      console.log(`[Scheduler] BOOKED! ${job.restaurant_name || restaurant?.name} on ${job.target_date} at ${slot.time}`)
+      console.log(`[Scheduler] BOOKED! ${jobName} on ${job.target_date} at ${slot.time}`)
     } catch (err) {
       console.error(`[Scheduler] Booking failed:`, err.message)
 
@@ -287,7 +315,7 @@ async function processJob(job) {
       const isConflict = /taken|unavailable|no longer|already.*booked|slot.*gone/i.test(err.message)
       createBookingRecord({
         watch_job_id: job.id,
-        restaurant: job.restaurant_name || restaurant?.name,
+        restaurant: jobName,
         date: job.target_date,
         time: slot.time,
         party_size: job.party_size,
@@ -300,7 +328,7 @@ async function processJob(job) {
       if (isConflict) {
         // Reset poll timer for immediate retry on next tick
         lastPollTime.delete(job.id)
-        console.log(`[Scheduler] Slot conflict — will retry immediately for ${job.restaurant_name || restaurant?.name}`)
+        console.log(`[Scheduler] Slot conflict — will retry immediately for ${jobName}`)
       }
       // Keep job monitoring — don't fail on booking error
     }
@@ -309,7 +337,7 @@ async function processJob(job) {
   }
 }
 
-function handleApiError(err, job) {
+function handleApiError(err, job, jobName) {
   const code = err.statusCode
   const msg = (err.message || '').toLowerCase()
 
@@ -318,7 +346,7 @@ function handleApiError(err, job) {
     updateWatchJob(job.id, { status: 'paused' })
     createBookingRecord({
       watch_job_id: job.id,
-      restaurant: job.restaurant_name || job.name,
+      restaurant: jobName,
       date: job.target_date,
       time: '',
       party_size: job.party_size,
@@ -329,7 +357,7 @@ function handleApiError(err, job) {
     cleanupJob(job.id)
     sendUpdate()
     sendCaptchaAlert(job)
-    notifyCaptchaRequired(job.restaurant_name || job.name)
+    notifyCaptchaRequired(jobName)
     console.warn(`[Scheduler] CAPTCHA detected for job ${job.id}`)
     return
   }
@@ -338,7 +366,7 @@ function handleApiError(err, job) {
     updateWatchJob(job.id, { status: 'failed' })
     createBookingRecord({
       watch_job_id: job.id,
-      restaurant: job.restaurant_name || job.name,
+      restaurant: jobName,
       date: job.target_date,
       time: '',
       party_size: job.party_size,
@@ -348,7 +376,7 @@ function handleApiError(err, job) {
     })
     cleanupJob(job.id)
     sendUpdate()
-    notifyBookingFailed(job.restaurant_name || job.name, 'Session expired')
+    notifyBookingFailed(jobName, 'Session expired')
   } else if (code === 429) {
     // Rate limited — apply exponential backoff
     applyBackoff(job, true)

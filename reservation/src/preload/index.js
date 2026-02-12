@@ -13,7 +13,9 @@ const validInvokeChannels = [
   'credentials:delete',
   'credentials:browser-login',
   'monitor:get-status',
-  'monitor:resume-job'
+  'monitor:resume-job',
+  'resy:check-availability',
+  'resy:book-now'
 ]
 
 const validSendChannels = []
