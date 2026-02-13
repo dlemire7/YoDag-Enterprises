@@ -106,7 +106,7 @@ Schema migrations run in `migrateSchema()` via ALTER TABLE checks.
 
 ### Instant Availability & Book Now (Phase 7 — Complete)
 
-Two new IPC handlers enable checking current availability and booking immediately without creating a watch job:
+IPC handlers for checking current availability and booking immediately without creating a watch job. Supports Resy (HTTP API) and Tock (DOM scraping — see Phase 8):
 
 **`resy:check-availability`** (params: `restaurant_id, date, party_size`):
 - Looks up restaurant, validates Resy platform, gets credentials + auth token
@@ -126,7 +126,7 @@ Two new IPC handlers enable checking current availability and booking immediatel
 - Booking conflict shows "Refresh Slots" button
 
 **Quick-create integration** (`MonitorPage.jsx`):
-- "Check Now" button appears next to "Quick Watch" for Resy restaurants
+- "Check Now" button appears next to "Quick Watch" for Resy and Tock restaurants
 - Inline availability results below form with Book Now per slot
 - Resets availability state when form inputs change
 
@@ -134,7 +134,7 @@ Two new IPC handlers enable checking current availability and booking immediatel
 
 ### IPC Channels
 
-Invoke (renderer → main): `db:get-restaurants`, `db:get-watch-jobs`, `db:get-booking-history`, `db:create-watch-job`, `db:update-watch-job`, `db:delete-watch-job`, `db:fetch-restaurant-images`, `app:get-version`, `credentials:get-all-statuses`, `credentials:delete`, `credentials:browser-login`, `monitor:get-status`, `monitor:resume-job`, `resy:check-availability`, `resy:book-now`, `resy:get-calendar`
+Invoke (renderer → main): `db:get-restaurants`, `db:get-watch-jobs`, `db:get-booking-history`, `db:create-watch-job`, `db:update-watch-job`, `db:delete-watch-job`, `db:fetch-restaurant-images`, `app:get-version`, `credentials:get-all-statuses`, `credentials:delete`, `credentials:browser-login`, `monitor:get-status`, `monitor:resume-job`, `resy:check-availability`, `resy:book-now`, `resy:get-calendar`, `tock:check-availability`, `tock:book-now`
 
 Receive (main → renderer): `images:progress`, `images:complete`, `monitor:job-update`, `monitor:captcha-required`
 
@@ -150,7 +150,8 @@ Receive (main → renderer): `images:progress`, `images:complete`, `monitor:job-
 | `src/main/tray.js` | System tray icon, context menu, minimize-to-tray |
 | `src/main/platforms/resy-api.js` | Resy REST API client (pure HTTP) |
 | `src/main/platforms/resy.js` | Resy platform module (Playwright + API) |
-| `src/main/platforms/tock.js` | Tock platform module (login only) |
+| `src/main/platforms/tock.js` | Tock platform module (Playwright login, availability checking, browser-based booking) |
+| `src/main/platforms/tock-scraper.js` | Tock DOM scraping utilities (slug extraction, URL building, 3 fallback selector strategies) |
 | `src/main/platforms/opentable.js` | OpenTable platform module (login only) |
 | `src/main/seed-data.js` | Seeds 40 NYC restaurants into DB |
 | `src/main/image-fetcher.js` | Fetches restaurant images |
@@ -167,10 +168,41 @@ Receive (main → renderer): `images:progress`, `images:complete`, `monitor:job-
 5. **Phase 5**: Resy monitoring engine — scheduler, REST API client, auto-booking, release-time sniping, exponential backoff, CAPTCHA detection, booking conflict recovery, desktop notifications, system tray, real-time UI updates
 6. **Phase 6**: UI polish — card hover animations, page transitions, keyboard shortcuts (Ctrl+N, Ctrl+F, Escape), React error boundaries
 7. **Phase 7**: Instant availability check & Book Now — check current Resy availability from wizard Review step and quick-create form, book immediately without creating a watch job. **Fixed**: `/4/find` 500 error caused by sending `Content-Type` header on GET requests. Split into `getHeaders()`/`postHeaders()`, removed browser-based availability workarounds.
+8. **Phase 8**: Tock availability checking & booking — DOM scraping with 3 fallback selector strategies, persistent headless browser context with 5-min idle timeout, browser-based booking (opens Tock page externally), full scheduler support with `processTockJob()`, UI support in both MonitorPage and WatchJobWizard
 
-### Next Steps (Phase 8+)
+### Tock Availability & Booking (Phase 8 — Complete)
 
-- Tock and OpenTable API clients + booking flows
+Tock uses browser-based scraping (no public API). Booking opens the Tock page in the user's default browser for manual completion (Braintree payment + Cloudflare Turnstile prevent full automation).
+
+**Scraper** (`src/main/platforms/tock-scraper.js`):
+- `extractSlug(tockUrl)` — parses restaurant slug from `exploretock.com/<slug>` URLs
+- `buildSearchUrl(slug, date, partySize, time)` — constructs Tock search page URL
+- `findAvailability(context, slug, date, partySize)` — scrapes search page with 3 fallback DOM selector strategies, returns `[{ time, config_id, type }]`
+- `formatTimeForUrl(displayTime)` — converts "6:30 PM" → "18:30" for URL params
+
+**Platform module** (`src/main/platforms/tock.js`):
+- `getOrCreateHeadlessContext(session)` — persistent Playwright browser context seeded with saved Tock session cookies, auto-closes after 5 minutes idle
+- `checkAvailability(session, tockUrl, date, partySize)` — extracts slug, gets/creates headless context, calls scraper
+- `bookSlot(session, tockUrl, date, partySize, time)` — builds booking URL, opens in user's browser via `shell.openExternal()`
+- `closeBrowser()` — cleans up both headless context and browser instance
+
+**IPC handlers** (`src/main/index.js`):
+- `tock:check-availability` — validates restaurant/credentials, calls `checkAvailability()`, returns `{ success, slots }` or typed errors (`noCredentials`, timeout)
+- `tock:book-now` — calls `bookSlot()`, creates booking record with `status: 'attempted'`, returns `{ success, opened_in_browser, url, message }`
+
+**Scheduler** (`src/main/scheduler.js`):
+- `processTockJob()` — full lifecycle: pending→monitoring transition, date expiry check, credential validation, scrape availability, match against desired time slots, open booking page on match, pause job after booking page opens, desktop notification
+- Platform routing: `if (platform === 'Tock') { await processTockJob(...); return }`
+
+**UI integration** (`MonitorPage.jsx`, `WatchJobWizard.jsx`):
+- `canCheckQuick` / `isSupported` checks include both Resy and Tock
+- Platform-aware IPC channel selection: `platform === 'Tock' ? 'tock:...' : 'resy:...'`
+- Tock "Book Now" shows "Booking page opened in your browser" message instead of inline confirmation
+- Auto-check on wizard Review step works for both platforms
+
+### Next Steps (Phase 9+)
+
+- OpenTable API client + booking flow
 - Settings UI for poll intervals, max retries, booking preferences
 - Electron Forge packaging → Windows .exe installer
 
