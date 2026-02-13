@@ -1,7 +1,7 @@
 import { getActiveWatchJobs, getRestaurantById, updateWatchJob, updateRestaurantVenueId, createBookingRecord } from './database.js'
 import { getCredential } from './credentials.js'
-import { resolveVenueId, getBookingDetails, getPaymentMethod, bookReservation, setSessionCookies } from './platforms/resy-api.js'
-import { extractResyToken, checkAvailability as browserCheckAvailability } from './platforms/resy.js'
+import { resolveVenueId, findAvailability, getBookingDetails, getPaymentMethod, bookReservation, setSessionCookies } from './platforms/resy-api.js'
+import { extractResyToken } from './platforms/resy.js'
 import { notifyBookingSuccess, notifyBookingFailed, notifyCaptchaRequired } from './notifications.js'
 
 const TICK_INTERVAL_MS = 10_000
@@ -243,10 +243,10 @@ async function processJob(job) {
       return
     }
 
-    // Find availability (uses Playwright browser context to bypass Incapsula CDN)
+    // Find availability via direct HTTP API call
     let slots
     try {
-      slots = await browserCheckAvailability(session, venueId, job.target_date, job.party_size)
+      slots = await findAvailability(authToken, venueId, job.target_date, job.party_size)
     } catch (err) {
       handleApiError(err, job, jobName)
       return

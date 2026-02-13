@@ -78,10 +78,12 @@ Schema migrations run in `migrateSchema()` via ALTER TABLE checks.
 
 **Resy API Client** (`src/main/platforms/resy-api.js`):
 - Pure HTTP client (no Playwright), uses Node fetch()
+- `getHeaders(token)` — for GET requests (no Content-Type); `postHeaders(token)` — for POST requests (adds Content-Type: application/x-www-form-urlencoded)
 - Required headers: `Authorization: ResyAPI api_key="VbWk7s3L4KiK5fzlO7JD3Q5EYolJI7n5"` + `X-Resy-Auth-Token: <token>`
 - `extractAuthToken(session)` — parses auth token from Playwright session localStorage
 - `resolveVenueId(authToken, url)` — resolves URL slug to venue_id (cached in DB)
 - `findAvailability(authToken, venueId, date, partySize)` — GET /4/find
+- `getVenueCalendar(authToken, venueId, numSeats)` — GET /4/venue/calendar → dates with open slots
 - `getBookingDetails(authToken, configId, day, partySize)` — POST /3/details → book_token
 - `getPaymentMethod(authToken)` — GET /2/user → payment_method_id
 - `bookReservation(authToken, bookToken, paymentMethodId)` — POST /3/book
@@ -98,11 +100,11 @@ Schema migrations run in `migrateSchema()` via ALTER TABLE checks.
 
 **Platform module** (`src/main/platforms/resy.js`):
 - `browserLogin()` — Playwright-based browser login flow
-- `checkAvailability(session, venueId, date, partySize)` — browser-based via Playwright `context.request` (bypasses Incapsula + DataDog RUM), falls back to resy-api.js direct fetch
+- Availability checks now handled directly by `findAvailability()` in `resy-api.js` (no browser needed)
 - `bookSlot(session, configId, day, partySize)` — chains details → payment → book
 - `extractResyToken(session)` — extracts auth token from session localStorage
 
-### Instant Availability & Book Now (Phase 7 — In Progress)
+### Instant Availability & Book Now (Phase 7 — Complete)
 
 Two new IPC handlers enable checking current availability and booking immediately without creating a watch job:
 
@@ -128,11 +130,11 @@ Two new IPC handlers enable checking current availability and booking immediatel
 - Inline availability results below form with Book Now per slot
 - Resets availability state when form inputs change
 
-**Known issue**: Resy's `/4/find` endpoint returns 500 via direct Node.js fetch (Incapsula WAF blocking). Browser-based `page.evaluate(fetch(...))` also fails due to DataDog RUM monkey-patching `fetch()`. Current fix uses Playwright `context.request` API which makes HTTP requests with browser cookies but bypasses page JS. Still testing whether this fully resolves the Incapsula issue.
+**Resolved**: The `/4/find` HTTP 500 was caused by sending `Content-Type: application/x-www-form-urlencoded` on GET requests, which triggered Resy's WAF/server rejection. Fixed by splitting headers into `getHeaders()` (no Content-Type, for GET) and `postHeaders()` (with Content-Type, for POST). All availability checks now use direct HTTP — no browser needed.
 
 ### IPC Channels
 
-Invoke (renderer → main): `db:get-restaurants`, `db:get-watch-jobs`, `db:get-booking-history`, `db:create-watch-job`, `db:update-watch-job`, `db:delete-watch-job`, `db:fetch-restaurant-images`, `app:get-version`, `credentials:get-all-statuses`, `credentials:delete`, `credentials:browser-login`, `monitor:get-status`, `monitor:resume-job`, `resy:check-availability`, `resy:book-now`
+Invoke (renderer → main): `db:get-restaurants`, `db:get-watch-jobs`, `db:get-booking-history`, `db:create-watch-job`, `db:update-watch-job`, `db:delete-watch-job`, `db:fetch-restaurant-images`, `app:get-version`, `credentials:get-all-statuses`, `credentials:delete`, `credentials:browser-login`, `monitor:get-status`, `monitor:resume-job`, `resy:check-availability`, `resy:book-now`, `resy:get-calendar`
 
 Receive (main → renderer): `images:progress`, `images:complete`, `monitor:job-update`, `monitor:captcha-required`
 
@@ -164,11 +166,10 @@ Receive (main → renderer): `images:progress`, `images:complete`, `monitor:job-
 4. **Phase 4**: Credential management — Playwright browser login, encrypted storage
 5. **Phase 5**: Resy monitoring engine — scheduler, REST API client, auto-booking, release-time sniping, exponential backoff, CAPTCHA detection, booking conflict recovery, desktop notifications, system tray, real-time UI updates
 6. **Phase 6**: UI polish — card hover animations, page transitions, keyboard shortcuts (Ctrl+N, Ctrl+F, Escape), React error boundaries
-7. **Phase 7** *(in progress)*: Instant availability check & Book Now — check current Resy availability from wizard Review step and quick-create form, book immediately without creating a watch job. Incapsula/DataDog WAF bypass still being tested.
+7. **Phase 7**: Instant availability check & Book Now — check current Resy availability from wizard Review step and quick-create form, book immediately without creating a watch job. **Fixed**: `/4/find` 500 error caused by sending `Content-Type` header on GET requests. Split into `getHeaders()`/`postHeaders()`, removed browser-based availability workarounds.
 
 ### Next Steps (Phase 8+)
 
-- Resolve Resy Incapsula/WAF blocking for `/4/find` availability checks
 - Tock and OpenTable API clients + booking flows
 - Settings UI for poll intervals, max retries, booking preferences
 - Electron Forge packaging → Windows .exe installer

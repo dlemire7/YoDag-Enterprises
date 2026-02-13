@@ -20,13 +20,16 @@ export function setSessionCookies(session) {
   }
 }
 
-function headers(authToken) {
+/**
+ * Headers for GET requests — no Content-Type (invalid on GET and triggers WAF rejection).
+ */
+function getHeaders(authToken) {
   const h = {
     'Authorization': `ResyAPI api_key="${API_KEY}"`,
+    'Accept': 'application/json, text/plain, */*',
+    'Cache-Control': 'no-cache',
     'X-Resy-Auth-Token': authToken,
     'X-Resy-Universal-Auth': authToken,
-    'Content-Type': 'application/x-www-form-urlencoded',
-    'Accept': 'application/json',
     'Origin': 'https://resy.com',
     'Referer': 'https://resy.com/',
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
@@ -35,6 +38,16 @@ function headers(authToken) {
     h['Cookie'] = _cookieHeader
   }
   return h
+}
+
+/**
+ * Headers for POST requests — includes Content-Type for form-encoded body.
+ */
+function postHeaders(authToken) {
+  return {
+    ...getHeaders(authToken),
+    'Content-Type': 'application/x-www-form-urlencoded'
+  }
 }
 
 /**
@@ -91,7 +104,7 @@ export async function resolveVenueId(authToken, url) {
 
   for (const endpoint of endpoints) {
     try {
-      const res = await fetch(endpoint, { headers: headers(authToken) })
+      const res = await fetch(endpoint, { headers: getHeaders(authToken) })
       if (res.ok) {
         const data = await res.json()
         const ids = extractAllCandidateIds(data)
@@ -117,7 +130,7 @@ export async function resolveVenueId(authToken, url) {
   try {
     const searchName = slug.replace(/-/g, ' ')
     const searchUrl = `${BASE_URL}/3/venuesearch/search?query=${encodeURIComponent(searchName)}&geo={"latitude":40.7128,"longitude":-74.006}&types=["venue"]`
-    const res = await fetch(searchUrl, { headers: headers(authToken) })
+    const res = await fetch(searchUrl, { headers: getHeaders(authToken) })
     if (res.ok) {
       const data = await res.json()
       const hits = data?.search?.hits || data?.results || data?.hits || []
@@ -189,7 +202,7 @@ export async function findAvailability(authToken, venueId, date, partySize) {
   const tokenPreview = authToken ? `${authToken.slice(0, 6)}...${authToken.slice(-4)}` : 'NONE'
   console.log(`[Resy API] Finding availability: venue_id=${venueId} date=${date} party=${partySize} token=${tokenPreview}`)
   const res = await fetch(findUrl, {
-    headers: headers(authToken)
+    headers: getHeaders(authToken)
   })
 
   if (res.status === 401 || res.status === 403) {
@@ -202,35 +215,6 @@ export async function findAvailability(authToken, venueId, date, partySize) {
     const body = await res.text().catch(() => '')
     const contentType = res.headers.get('content-type') || ''
     console.error(`[Resy API] /4/find error ${res.status} (${contentType}): ${body.slice(0, 500)}`)
-
-    // One-time diagnostic: try with minimal headers (no Content-Type for GET)
-    if (!findAvailability._diagDone) {
-      findAvailability._diagDone = true
-      try {
-        const diagHeaders = {
-          'Authorization': `ResyAPI api_key="${API_KEY}"`,
-          'X-Resy-Auth-Token': authToken,
-          'Accept': 'application/json'
-        }
-        const diagRes = await fetch(findUrl, { headers: diagHeaders })
-        console.log(`[Resy API] DIAG minimal headers → ${diagRes.status}`)
-        if (!diagRes.ok) {
-          const diagBody = await diagRes.text().catch(() => '')
-          console.log(`[Resy API] DIAG body: ${diagBody.slice(0, 300)}`)
-        }
-        // Also try completely unauthenticated
-        const noAuthHeaders = { 'Authorization': `ResyAPI api_key="${API_KEY}"`, 'Accept': 'application/json' }
-        const noAuthRes = await fetch(findUrl, { headers: noAuthHeaders })
-        console.log(`[Resy API] DIAG no auth token → ${noAuthRes.status}`)
-        if (noAuthRes.ok) {
-          const noAuthData = await noAuthRes.json()
-          console.log(`[Resy API] DIAG no-auth response keys: ${Object.keys(noAuthData).join(', ')}`)
-        }
-      } catch (e) {
-        console.log(`[Resy API] DIAG error: ${e.message}`)
-      }
-    }
-
     throw Object.assign(new Error(`Resy API error: ${res.status}`), { statusCode: res.status })
   }
 
@@ -268,7 +252,7 @@ export async function getBookingDetails(authToken, configId, day, partySize) {
 
   const res = await fetch(`${BASE_URL}/3/details`, {
     method: 'POST',
-    headers: headers(authToken),
+    headers: postHeaders(authToken),
     body: body.toString()
   })
 
@@ -288,7 +272,7 @@ export async function getBookingDetails(authToken, configId, day, partySize) {
  */
 export async function getPaymentMethod(authToken) {
   const res = await fetch(`${BASE_URL}/2/user`, {
-    headers: headers(authToken)
+    headers: getHeaders(authToken)
   })
 
   if (!res.ok) {
@@ -319,7 +303,7 @@ export async function bookReservation(authToken, bookToken, paymentMethodId) {
 
   const res = await fetch(`${BASE_URL}/3/book`, {
     method: 'POST',
-    headers: headers(authToken),
+    headers: postHeaders(authToken),
     body: body.toString()
   })
 
@@ -337,6 +321,38 @@ export async function bookReservation(authToken, bookToken, paymentMethodId) {
     confirmation_code: data?.resy_token || data?.reservation_id || null,
     details: data
   }
+}
+
+/**
+ * Get venue calendar showing which dates have open slots.
+ * Useful for UI calendar highlighting.
+ * Returns array of { date, inventory } objects.
+ */
+export async function getVenueCalendar(authToken, venueId, numSeats) {
+  const params = new URLSearchParams({
+    venue_id: String(venueId),
+    num_seats: String(numSeats || 2)
+  })
+
+  const res = await fetch(`${BASE_URL}/4/venue/calendar?${params}`, {
+    headers: getHeaders(authToken)
+  })
+
+  if (!res.ok) {
+    throw Object.assign(new Error(`Calendar API error: ${res.status}`), { statusCode: res.status })
+  }
+
+  const data = await res.json()
+  // Response shape: { scheduled: [{ date: "2025-03-01", inventory: { ... } }] }
+  const scheduled = data?.scheduled || []
+  return scheduled.filter(d => {
+    const inv = d.inventory || {}
+    // A date has availability if any reservation type shows open slots
+    return Object.values(inv).some(v => v?.reservation === 'available')
+  }).map(d => ({
+    date: d.date,
+    inventory: d.inventory
+  }))
 }
 
 /**

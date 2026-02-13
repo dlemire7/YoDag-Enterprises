@@ -6,7 +6,7 @@ import { fetchAllMissingImages } from './image-fetcher.js'
 import { saveCredential, getCredential, deleteCredential, getAllCredentialStatuses, markValidated } from './credentials.js'
 import { startScheduler, stopScheduler, getSchedulerStatus, resumeJob } from './scheduler.js'
 import { setNotificationWindow, notifyBookingSuccess } from './notifications.js'
-import { setSessionCookies, resolveVenueId, getBookingDetails, getPaymentMethod, bookReservation } from './platforms/resy-api.js'
+import { setSessionCookies, resolveVenueId, findAvailability, getBookingDetails, getPaymentMethod, bookReservation, getVenueCalendar } from './platforms/resy-api.js'
 import { createTray, updateContextMenu, destroyTray, createAppIcon } from './tray.js'
 import * as resyPlatform from './platforms/resy.js'
 import * as tockPlatform from './platforms/tock.js'
@@ -140,7 +140,7 @@ function registerIpcHandlers() {
     return { success: true }
   })
 
-  // Instant Availability Check
+  // Instant Availability Check — direct HTTP via resy-api.js (no browser needed)
   ipcMain.handle('resy:check-availability', async (_, { restaurant_id, date, party_size }) => {
     try {
       const restaurant = getRestaurantById(restaurant_id)
@@ -165,7 +165,7 @@ function registerIpcHandlers() {
         }
       }
 
-      const slots = await resyPlatform.checkAvailability(session, venueId, date, party_size)
+      const slots = await findAvailability(authToken, venueId, date, party_size)
       return { success: true, slots: slots || [] }
     } catch (err) {
       const statusCode = err.statusCode || err.status
@@ -179,6 +179,38 @@ function registerIpcHandlers() {
         return { success: false, error: 'Resy server error — this restaurant may not have availability open yet. Try again shortly.' }
       }
       return { success: false, error: err.message || 'Failed to check availability' }
+    }
+  })
+
+  // Venue Calendar — dates with open slots
+  ipcMain.handle('resy:get-calendar', async (_, { restaurant_id, party_size }) => {
+    try {
+      const restaurant = getRestaurantById(restaurant_id)
+      if (!restaurant) return { success: false, error: 'Restaurant not found' }
+      if (restaurant.platform !== 'Resy') return { unsupported: true }
+
+      const session = getCredential('Resy')
+      if (!session) return { noCredentials: true }
+
+      const authToken = resyPlatform.extractResyToken(session)
+      if (!authToken) return { success: false, error: 'Could not extract auth token', sessionExpired: true }
+
+      setSessionCookies(session)
+
+      let venueId = restaurant.venue_id
+      if (!venueId) {
+        try {
+          venueId = await resolveVenueId(authToken, restaurant.url)
+          updateRestaurantVenueId(restaurant.id, venueId)
+        } catch (err) {
+          return { success: false, error: `Could not resolve venue: ${err.message}` }
+        }
+      }
+
+      const dates = await getVenueCalendar(authToken, venueId, party_size)
+      return { success: true, dates }
+    } catch (err) {
+      return { success: false, error: err.message || 'Failed to fetch calendar' }
     }
   })
 
