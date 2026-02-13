@@ -2,6 +2,7 @@ import { getActiveWatchJobs, getRestaurantById, updateWatchJob, updateRestaurant
 import { getCredential } from './credentials.js'
 import { resolveVenueId, findAvailability, getBookingDetails, getPaymentMethod, bookReservation, setSessionCookies } from './platforms/resy-api.js'
 import { extractResyToken } from './platforms/resy.js'
+import * as tockPlatform from './platforms/tock.js'
 import { notifyBookingSuccess, notifyBookingFailed, notifyCaptchaRequired } from './notifications.js'
 
 const TICK_INTERVAL_MS = 10_000
@@ -143,10 +144,14 @@ async function processJob(job) {
   const jobName = job.restaurant_name || job.name || `job ${job.id.slice(0, 8)}`
 
   try {
-    // Only Resy is supported for now — check BEFORE transitioning status
     const platform = job.platform || job.restaurant_platform
+
+    // Route to platform-specific handler
+    if (platform === 'Tock') {
+      await processTockJob(job, jobName, platform, today)
+      return
+    }
     if (platform !== 'Resy') {
-      // Don't spam logs — only log once per job
       if (job.status === 'pending') {
         console.log(`[Scheduler] ${jobName}: platform "${platform}" not yet supported, keeping as pending`)
       }
@@ -334,6 +339,102 @@ async function processJob(job) {
     }
   } catch (err) {
     console.error(`[Scheduler] Unexpected error processing job ${job.id}:`, err.message)
+  }
+}
+
+async function processTockJob(job, jobName, platform, today) {
+  // Transition pending → monitoring
+  if (job.status === 'pending') {
+    updateWatchJob(job.id, { status: 'monitoring' })
+    console.log(`[Scheduler] ${jobName}: pending → monitoring (Tock)`)
+    sendUpdate()
+  }
+
+  // Check if target date has expired
+  if (job.target_date < today) {
+    console.log(`[Scheduler] ${jobName}: target date ${job.target_date} expired`)
+    updateWatchJob(job.id, { status: 'failed' })
+    createBookingRecord({
+      watch_job_id: job.id, restaurant: jobName,
+      date: job.target_date, time: '', party_size: job.party_size,
+      platform, status: 'failed', error_details: 'Target date has expired'
+    })
+    cleanupJob(job.id)
+    sendUpdate()
+    return
+  }
+
+  // Get credentials
+  const session = getCredential('Tock')
+  if (!session) {
+    console.log(`[Scheduler] ${jobName}: no Tock credentials found — failing job`)
+    updateWatchJob(job.id, { status: 'failed' })
+    createBookingRecord({
+      watch_job_id: job.id, restaurant: jobName,
+      date: job.target_date, time: '', party_size: job.party_size,
+      platform: 'Tock', status: 'failed',
+      error_details: 'No credentials — sign in on Settings page'
+    })
+    cleanupJob(job.id)
+    sendUpdate()
+    return
+  }
+
+  // Get restaurant URL
+  const restaurant = getRestaurantById(job.restaurant_id)
+  if (!restaurant?.url) {
+    console.log(`[Scheduler] ${jobName}: no URL for Tock restaurant`)
+    return
+  }
+
+  // Scrape availability
+  let slots
+  try {
+    slots = await tockPlatform.checkAvailability(session, restaurant.url, job.target_date, job.party_size)
+  } catch (err) {
+    console.error(`[Scheduler] Tock scrape error for ${jobName}:`, err.message)
+    applyBackoff(job)
+    return
+  }
+
+  // Reset retry count on success
+  retryCount.delete(job.id)
+
+  const desiredSlots = parseTimeSlots(job.time_slots)
+  console.log(`[Scheduler] ${jobName}: ${slots.length} Tock slots on ${job.target_date}, looking for: [${desiredSlots.join(', ')}]`)
+
+  const matchingSlots = slots.filter(s => desiredSlots.some(d => timeMatches(s.time, d)))
+
+  if (matchingSlots.length === 0) {
+    if (slots.length > 0) {
+      console.log(`[Scheduler] ${jobName}: no time match — keep polling`)
+    }
+    return
+  }
+
+  // Match found — open booking page in browser and notify user
+  const slot = matchingSlots[0]
+  console.log(`[Scheduler] ${jobName}: TOCK MATCH! ${slot.time} available`)
+
+  try {
+    const result = await tockPlatform.bookSlot(session, restaurant.url, job.target_date, job.party_size, slot.time)
+
+    createBookingRecord({
+      watch_job_id: job.id, restaurant: jobName,
+      date: job.target_date, time: slot.time,
+      party_size: job.party_size, platform: 'Tock',
+      status: 'attempted',
+      attempt_log: `Opened Tock booking page: ${result.url}`
+    })
+
+    notifyBookingSuccess(jobName, job.target_date, slot.time, 'Complete booking in browser')
+
+    // Pause the job so it stops polling (user completes booking manually)
+    updateWatchJob(job.id, { status: 'paused' })
+    cleanupJob(job.id)
+    sendUpdate()
+  } catch (err) {
+    console.error(`[Scheduler] Failed to open Tock booking for ${jobName}:`, err.message)
   }
 }
 

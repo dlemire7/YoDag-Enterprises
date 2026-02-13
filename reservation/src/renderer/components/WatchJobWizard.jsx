@@ -112,13 +112,15 @@ export default function WatchJobWizard({ isOpen, onClose, onCreated, restaurants
 
   // Availability check
   const checkAvailability = useCallback(async () => {
-    if (!selectedRestaurant || selectedRestaurant.platform !== 'Resy') return
+    const platform = selectedRestaurant?.platform
+    if (!platform || (platform !== 'Resy' && platform !== 'Tock')) return
     setAvailabilityState('loading')
     setAvailableSlots([])
     setAvailabilityError('')
     setBookingResult(null)
     try {
-      const result = await invoke('resy:check-availability', {
+      const channel = platform === 'Tock' ? 'tock:check-availability' : 'resy:check-availability'
+      const result = await invoke(channel, {
         restaurant_id: selectedRestaurant.id,
         date: targetDate,
         party_size: partySize
@@ -145,9 +147,10 @@ export default function WatchJobWizard({ isOpen, onClose, onCreated, restaurants
     }
   }, [selectedRestaurant, targetDate, partySize, invoke])
 
-  // Auto-check when reaching Review step for Resy restaurants
+  // Auto-check when reaching Review step for supported platforms
   useEffect(() => {
-    if (currentStep === 5 && selectedRestaurant?.platform === 'Resy') {
+    const platform = selectedRestaurant?.platform
+    if (currentStep === 5 && (platform === 'Resy' || platform === 'Tock')) {
       checkAvailability()
     }
   }, [currentStep])
@@ -156,19 +159,28 @@ export default function WatchJobWizard({ isOpen, onClose, onCreated, restaurants
     setBookingSlot(slot.config_id)
     setBookingResult(null)
     try {
-      const result = await invoke('resy:book-now', {
+      const platform = selectedRestaurant.platform
+      const channel = platform === 'Tock' ? 'tock:book-now' : 'resy:book-now'
+      const result = await invoke(channel, {
         restaurant_id: selectedRestaurant.id,
         config_id: slot.config_id,
         date: targetDate,
         party_size: partySize,
         time: slot.time
       })
-      setBookingResult(result)
-      if (result.success) {
-        setTimeout(() => {
-          onCreated()
-          onClose()
-        }, 2500)
+      if (result.success && result.opened_in_browser) {
+        setBookingResult({
+          success: true,
+          message: result.message || 'Booking page opened in your browser.'
+        })
+      } else {
+        setBookingResult(result)
+        if (result.success) {
+          setTimeout(() => {
+            onCreated()
+            onClose()
+          }, 2500)
+        }
       }
     } catch (err) {
       setBookingResult({ success: false, error: err.message || 'Booking failed' })
@@ -188,10 +200,10 @@ export default function WatchJobWizard({ isOpen, onClose, onCreated, restaurants
   if (!isOpen) return null
 
   const portalRoot = document.body
-  const isResy = selectedRestaurant?.platform === 'Resy'
+  const isSupported = selectedRestaurant?.platform === 'Resy' || selectedRestaurant?.platform === 'Tock'
 
   const renderAvailabilitySection = () => {
-    if (!isResy) {
+    if (!isSupported) {
       return (
         <div className="availability-section">
           <p className="wizard-hint">Instant availability check is not yet supported for {selectedRestaurant?.platform}. Create a watch job to monitor for openings.</p>
@@ -282,7 +294,10 @@ export default function WatchJobWizard({ isOpen, onClose, onCreated, restaurants
 
         {bookingResult?.success && (
           <div className="availability-section__booking-success">
-            Booked! {bookingResult.confirmation_code && <>Confirmation: <strong>{bookingResult.confirmation_code}</strong></>}
+            {bookingResult.message
+              ? bookingResult.message
+              : <>Booked! {bookingResult.confirmation_code && <>Confirmation: <strong>{bookingResult.confirmation_code}</strong></>}</>
+            }
           </div>
         )}
       </div>

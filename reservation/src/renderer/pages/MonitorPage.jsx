@@ -122,7 +122,7 @@ export default function MonitorPage() {
 
   const quickCheckReady = quickRestaurant && quickDate && quickPartySize && quickDate >= getTomorrow()
   const selectedQuickRestaurant = restaurants.find(r => String(r.id) === quickRestaurant)
-  const isResyQuick = selectedQuickRestaurant?.platform === 'Resy'
+  const canCheckQuick = selectedQuickRestaurant?.platform === 'Resy' || selectedQuickRestaurant?.platform === 'Tock'
 
   // Reset quick availability when inputs change
   useEffect(() => {
@@ -140,14 +140,16 @@ export default function MonitorPage() {
     setQuickAvailError('')
     setQuickBookingResult(null)
     try {
-      const result = await invoke('resy:check-availability', {
+      const platform = selectedQuickRestaurant.platform
+      const channel = platform === 'Tock' ? 'tock:check-availability' : 'resy:check-availability'
+      const result = await invoke(channel, {
         restaurant_id: selectedQuickRestaurant.id,
         date: quickDate,
         party_size: parseInt(quickPartySize, 10)
       })
       if (result.noCredentials) {
         setQuickAvailState('error')
-        setQuickAvailError('Not signed into Resy — go to Settings to sign in')
+        setQuickAvailError(`Not signed into ${platform} — go to Settings to sign in`)
         return
       }
       if (result.success) {
@@ -167,22 +169,32 @@ export default function MonitorPage() {
     setQuickBookingSlot(slot.config_id)
     setQuickBookingResult(null)
     try {
-      const result = await invoke('resy:book-now', {
+      const platform = selectedQuickRestaurant.platform
+      const channel = platform === 'Tock' ? 'tock:book-now' : 'resy:book-now'
+      const result = await invoke(channel, {
         restaurant_id: selectedQuickRestaurant.id,
         config_id: slot.config_id,
         date: quickDate,
         party_size: parseInt(quickPartySize, 10),
         time: slot.time
       })
-      setQuickBookingResult(result)
-      if (result.success) {
+      if (result.success && result.opened_in_browser) {
+        setQuickBookingResult({
+          success: true,
+          message: result.message || 'Booking page opened in your browser. Complete the reservation there.'
+        })
         fetchData()
-        setTimeout(() => {
-          setQuickRestaurant('')
-          setQuickDate('')
-          setQuickTime('')
-          setQuickPartySize('')
-        }, 3000)
+      } else {
+        setQuickBookingResult(result)
+        if (result.success) {
+          fetchData()
+          setTimeout(() => {
+            setQuickRestaurant('')
+            setQuickDate('')
+            setQuickTime('')
+            setQuickPartySize('')
+          }, 3000)
+        }
       }
     } catch (err) {
       setQuickBookingResult({ success: false, error: err.message || 'Booking failed' })
@@ -315,7 +327,7 @@ export default function MonitorPage() {
           >
             Quick Watch
           </button>
-          {isResyQuick && (
+          {canCheckQuick && (
             <button
               className="wizard-btn wizard-btn--secondary quick-create__btn"
               disabled={!quickCheckReady || quickAvailState === 'loading'}
@@ -327,14 +339,14 @@ export default function MonitorPage() {
         </div>
 
         {/* Inline availability results */}
-        {isResyQuick && quickAvailState === 'loading' && (
+        {canCheckQuick && quickAvailState === 'loading' && (
           <div className="availability-section__loading">
             <div className="credential-signing-spinner" />
             <span>Checking availability...</span>
           </div>
         )}
 
-        {isResyQuick && quickAvailState === 'error' && (
+        {canCheckQuick && quickAvailState === 'error' && (
           <div className="availability-section__error">
             <span>{quickAvailError}</span>
             <button
@@ -347,13 +359,13 @@ export default function MonitorPage() {
           </div>
         )}
 
-        {isResyQuick && quickAvailState === 'loaded' && quickSlots.length === 0 && (
+        {canCheckQuick && quickAvailState === 'loaded' && quickSlots.length === 0 && (
           <div className="availability-section__empty">
             No slots currently available. Create a watch job to monitor for openings.
           </div>
         )}
 
-        {isResyQuick && quickAvailState === 'loaded' && quickSlots.length > 0 && (
+        {canCheckQuick && quickAvailState === 'loaded' && quickSlots.length > 0 && (
           <div className="availability-slots__grid">
             {quickSlots.map((slot) => (
               <div key={slot.config_id} className="availability-slot">
@@ -371,7 +383,7 @@ export default function MonitorPage() {
           </div>
         )}
 
-        {isResyQuick && quickBookingResult && !quickBookingResult.success && (
+        {canCheckQuick && quickBookingResult && !quickBookingResult.success && (
           <div className="availability-section__booking-error">
             <span>{quickBookingResult.error}</span>
             {quickBookingResult.conflict && (
@@ -386,9 +398,12 @@ export default function MonitorPage() {
           </div>
         )}
 
-        {isResyQuick && quickBookingResult?.success && (
+        {canCheckQuick && quickBookingResult?.success && (
           <div className="availability-section__booking-success">
-            Booked! {quickBookingResult.confirmation_code && <>Confirmation: <strong>{quickBookingResult.confirmation_code}</strong></>}
+            {quickBookingResult.message
+              ? quickBookingResult.message
+              : <>Booked! {quickBookingResult.confirmation_code && <>Confirmation: <strong>{quickBookingResult.confirmation_code}</strong></>}</>
+            }
           </div>
         )}
       </div>

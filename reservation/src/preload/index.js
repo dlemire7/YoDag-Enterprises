@@ -16,7 +16,9 @@ const validInvokeChannels = [
   'monitor:resume-job',
   'resy:check-availability',
   'resy:book-now',
-  'resy:get-calendar'
+  'resy:get-calendar',
+  'tock:check-availability',
+  'tock:book-now'
 ]
 
 const validSendChannels = []

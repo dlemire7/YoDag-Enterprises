@@ -214,6 +214,58 @@ function registerIpcHandlers() {
     }
   })
 
+  // Tock Availability Check
+  ipcMain.handle('tock:check-availability', async (_, { restaurant_id, date, party_size }) => {
+    try {
+      const restaurant = getRestaurantById(restaurant_id)
+      if (!restaurant) return { success: false, error: 'Restaurant not found' }
+      if (restaurant.platform !== 'Tock') return { unsupported: true }
+
+      const session = getCredential('Tock')
+      if (!session) return { noCredentials: true }
+
+      const slots = await tockPlatform.checkAvailability(session, restaurant.url, date, party_size)
+      return { success: true, slots: slots || [] }
+    } catch (err) {
+      if (err.message?.includes('timeout')) {
+        return { success: false, error: 'Tock page took too long to load. Try again.' }
+      }
+      return { success: false, error: err.message || 'Failed to check availability' }
+    }
+  })
+
+  // Tock Book Now (opens in browser)
+  ipcMain.handle('tock:book-now', async (_, { restaurant_id, date, party_size, time }) => {
+    try {
+      const restaurant = getRestaurantById(restaurant_id)
+      if (!restaurant) return { success: false, error: 'Restaurant not found' }
+
+      const session = getCredential('Tock')
+      if (!session) return { success: false, error: 'No Tock credentials found' }
+
+      const result = await tockPlatform.bookSlot(session, restaurant.url, date, party_size, time)
+
+      if (result.success) {
+        createBookingRecord({
+          watch_job_id: null,
+          restaurant: restaurant.name,
+          date,
+          time,
+          party_size,
+          platform: 'Tock',
+          status: 'attempted',
+          confirmation_code: null,
+          attempt_log: `Opened Tock booking page: ${result.url}`,
+          error_details: null
+        })
+        return result
+      }
+      return { success: false, error: 'Failed to open booking page' }
+    } catch (err) {
+      return { success: false, error: err.message || 'Booking failed' }
+    }
+  })
+
   // Instant Book Now
   ipcMain.handle('resy:book-now', async (_, { restaurant_id, config_id, date, party_size, time }) => {
     try {
