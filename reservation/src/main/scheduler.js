@@ -281,10 +281,12 @@ async function processJob(job) {
     console.log(`[Scheduler] ${jobName}: MATCH! Attempting to book ${slot.time}...`)
 
     try {
-      const bookToken = await getBookingDetails(authToken, slot.config_id, job.target_date, job.party_size)
+      const [bookToken, paymentId] = await Promise.all([
+        getBookingDetails(authToken, slot.config_id, job.target_date, job.party_size),
+        getPaymentMethod(authToken)
+      ])
       if (!bookToken) throw new Error('No book_token returned')
 
-      const paymentId = await getPaymentMethod(authToken)
       const result = await bookReservation(authToken, bookToken, paymentId)
 
       // Success!

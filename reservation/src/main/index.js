@@ -280,10 +280,12 @@ function registerIpcHandlers() {
 
       setSessionCookies(session)
 
-      const bookToken = await getBookingDetails(authToken, config_id, date, party_size)
+      const [bookToken, paymentMethodId] = await Promise.all([
+        getBookingDetails(authToken, config_id, date, party_size),
+        getPaymentMethod(authToken)
+      ])
       if (!bookToken) return { success: false, error: 'Could not get booking details — slot may no longer be available', conflict: true }
 
-      const paymentMethodId = await getPaymentMethod(authToken)
       const result = await bookReservation(authToken, bookToken, paymentMethodId)
 
       if (result.success) {

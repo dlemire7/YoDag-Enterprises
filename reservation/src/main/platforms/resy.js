@@ -257,10 +257,12 @@ export async function bookSlot(session, configId, day, partySize) {
   const authToken = extractResyToken(session)
   if (!authToken) throw new Error('No auth token found in session')
 
-  const bookToken = await getBookingDetails(authToken, configId, day, partySize)
+  const [bookToken, paymentId] = await Promise.all([
+    getBookingDetails(authToken, configId, day, partySize),
+    getPaymentMethod(authToken)
+  ])
   if (!bookToken) throw new Error('Failed to obtain book_token')
 
-  const paymentId = await getPaymentMethod(authToken)
   return bookReservation(authToken, bookToken, paymentId)
 }
 

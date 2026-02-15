@@ -4,6 +4,10 @@ const API_KEY = 'VbWk7s3L4KiK5fzlO7JD3Q5EYolJI7n5'
 // Module-level cookie store — populated from Playwright session
 let _cookieHeader = ''
 
+// Payment method cache — the ID never changes during a session
+let _cachedPaymentMethod = null  // { id, fetchedAt }
+const PAYMENT_CACHE_TTL = 60 * 60 * 1000  // 1 hour
+
 /**
  * Set cookies from a saved Playwright session for use in API requests.
  * Extracts cookies that match .resy.com or api.resy.com domains.
@@ -273,6 +277,11 @@ export async function getBookingDetails(authToken, configId, day, partySize) {
  * Get the user's payment method ID.
  */
 export async function getPaymentMethod(authToken) {
+  // Return cached value if still fresh
+  if (_cachedPaymentMethod && (Date.now() - _cachedPaymentMethod.fetchedAt) < PAYMENT_CACHE_TTL) {
+    return _cachedPaymentMethod.id
+  }
+
   const res = await fetch(`${BASE_URL}/2/user`, {
     headers: getHeaders(authToken)
   })
@@ -283,13 +292,15 @@ export async function getPaymentMethod(authToken) {
 
   const data = await res.json()
   const methods = data?.payment_methods || data?.payment_method_id
+  let id = null
   if (Array.isArray(methods) && methods.length > 0) {
-    return methods[0].id
+    id = methods[0].id
+  } else if (typeof methods === 'number' || typeof methods === 'string') {
+    id = methods
   }
-  if (typeof methods === 'number' || typeof methods === 'string') {
-    return methods
-  }
-  return null
+
+  _cachedPaymentMethod = { id, fetchedAt: Date.now() }
+  return id
 }
 
 /**
