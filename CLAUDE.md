@@ -33,7 +33,7 @@ npm run dev
 ### Database (`src/main/database.js`)
 
 SQLite via better-sqlite3 with WAL mode. Tables:
-- **restaurants** — 40 NYC restaurants with name, neighborhood, borough, cuisine, stars, platform, url, image_url, venue_id
+- **restaurants** — NYC restaurants (40 pre-seeded + user-added) with name, neighborhood, borough, cuisine, stars, platform, url, image_url, venue_id
 - **watch_jobs** — Monitoring jobs with restaurant_id, target_date, time_slots (JSON), party_size, status, poll_interval_sec, booked_at, confirmation_code
 - **booking_history** — Booking attempts/successes with watch_job_id, restaurant, date, time, platform, status, confirmation_code, error_details
 - **credentials** — Encrypted platform session data (Resy/Tock/OpenTable)
@@ -54,9 +54,9 @@ Schema migrations run in `migrateSchema()` via ALTER TABLE checks.
 - Queries DB for active watch jobs (status = pending/monitoring)
 - Respects per-job `poll_interval_sec` via in-memory `lastPollTime` map
 - Max 10 concurrent API calls
-- Two monitoring strategies: `continuous` (30s default) and `release_time` (aggressive 4s polling in 60s window before calculated release time, falls back to 30s after 10 minutes)
+- Two monitoring strategies: `continuous` (30s default) and `release_time` (aggressive 1s polling in 30s window before calculated release time, falls back to 30s after 10 minutes)
 - `parseReleaseSchedule(releaseStr, targetDate)` — parses "N days ahead" / "N weeks ahead" into release Date
-- `getEffectiveInterval(job)` — returns Infinity (skip), 4s (sniping), or 30s based on strategy and current time
+- `getEffectiveInterval(job)` — returns Infinity (skip), 1s (sniping), or 30s based on strategy and current time
 - Exponential backoff on transient errors via in-memory `retryCount` Map (base * 2^n for server errors, base * 3^n for rate limits, capped at 5 minutes)
 - CAPTCHA detection: pauses job, sends desktop notification + IPC event `monitor:captcha-required`
 - Booking conflict recovery: detects "slot taken" errors, logs as `conflict` status, resets poll timer for immediate retry
@@ -87,6 +87,7 @@ Schema migrations run in `migrateSchema()` via ALTER TABLE checks.
 - `getBookingDetails(authToken, configId, day, partySize)` — POST /3/details → book_token
 - `getPaymentMethod(authToken)` — GET /2/user → payment_method_id (cached in-memory for 1 hour via `_cachedPaymentMethod`)
 - `bookReservation(authToken, bookToken, paymentMethodId)` — POST /3/book
+- `searchVenues(authToken, query)` — GET /3/venuesearch/search → up to 10 normalized results with name, neighborhood, cuisine, url, venue_id, image_url
 
 **Job Status Flow**: `pending` → `monitoring` → `booked` (success) or `failed` (error/expired) or `paused` (CAPTCHA)
 
@@ -138,7 +139,7 @@ IPC handlers for checking current availability and booking immediately without c
 
 ### IPC Channels
 
-Invoke (renderer → main): `db:get-restaurants`, `db:get-watch-jobs`, `db:get-booking-history`, `db:create-watch-job`, `db:update-watch-job`, `db:delete-watch-job`, `db:fetch-restaurant-images`, `app:get-version`, `credentials:get-all-statuses`, `credentials:delete`, `credentials:browser-login`, `monitor:get-status`, `monitor:resume-job`, `resy:check-availability`, `resy:book-now`, `resy:get-calendar`, `tock:check-availability`, `tock:book-now`
+Invoke (renderer → main): `db:get-restaurants`, `db:get-watch-jobs`, `db:get-booking-history`, `db:create-watch-job`, `db:update-watch-job`, `db:delete-watch-job`, `db:add-restaurant`, `db:fetch-restaurant-images`, `app:get-version`, `credentials:get-all-statuses`, `credentials:delete`, `credentials:browser-login`, `monitor:get-status`, `monitor:resume-job`, `restaurant:search`, `resy:check-availability`, `resy:book-now`, `resy:get-calendar`, `tock:check-availability`, `tock:book-now`
 
 Receive (main → renderer): `images:progress`, `images:complete`, `monitor:job-update`, `monitor:captcha-required`
 
@@ -156,11 +157,12 @@ Receive (main → renderer): `images:progress`, `images:complete`, `monitor:job-
 | `src/main/platforms/resy.js` | Resy platform module (Playwright + API) |
 | `src/main/platforms/tock.js` | Tock platform module (Playwright login, availability checking, browser-based booking) |
 | `src/main/platforms/tock-scraper.js` | Tock DOM scraping utilities (slug extraction, URL building, 3 fallback selector strategies) |
-| `src/main/platforms/opentable.js` | OpenTable platform module (login only) |
+| `src/main/platforms/opentable.js` | OpenTable platform module (login + public search API) |
 | `src/main/seed-data.js` | Seeds 40 NYC restaurants into DB |
 | `src/main/image-fetcher.js` | Fetches restaurant images |
 | `src/renderer/pages/MonitorPage.jsx` | Monitor & Book UI with real-time updates |
 | `src/renderer/pages/CatalogPage.jsx` | Restaurant catalog browser |
+| `src/renderer/components/AddRestaurantModal.jsx` | Add restaurant via platform search or paste URL |
 | `src/renderer/pages/SettingsPage.jsx` | Credential management UI |
 
 ### Completed Phases
@@ -173,6 +175,7 @@ Receive (main → renderer): `images:progress`, `images:complete`, `monitor:job-
 6. **Phase 6**: UI polish — card hover animations, page transitions, keyboard shortcuts (Ctrl+N, Ctrl+F, Escape), React error boundaries
 7. **Phase 7**: Instant availability check & Book Now — check current Resy availability from wizard Review step and quick-create form, book immediately without creating a watch job. **Fixed**: `/4/find` 500 error caused by sending `Content-Type` header on GET requests. Split into `getHeaders()`/`postHeaders()`, removed browser-based availability workarounds.
 8. **Phase 8**: Tock availability checking & booking — DOM scraping with 3 fallback selector strategies, persistent headless browser context with 5-min idle timeout, browser-based booking (opens Tock page externally), full scheduler support with `processTockJob()`, UI support in both MonitorPage and WatchJobWizard
+9. **Phase 9**: Add Restaurant via platform search — search Resy (API), Tock (scraper), OpenTable (public API) from within the app, or paste a URL to add any restaurant to the catalog. AddRestaurantModal component with platform tabs, duplicate detection, auto image fetch. Entry points: Catalog page header button, Monitor page dropdown option. Release-time sniping tuned to 30s window / 1s polling.
 
 ### Tock Availability & Booking (Phase 8 — Complete)
 
@@ -183,11 +186,13 @@ Tock uses browser-based scraping (no public API). Booking opens the Tock page in
 - `buildSearchUrl(slug, date, partySize, time)` — constructs Tock search page URL
 - `findAvailability(context, slug, date, partySize)` — scrapes search page with 3 fallback DOM selector strategies, returns `[{ time, config_id, type }]`
 - `formatTimeForUrl(displayTime)` — converts "6:30 PM" → "18:30" for URL params
+- `searchRestaurants(context, query)` — scrapes `exploretock.com/search?query=...`, extracts restaurant links/names/slugs from DOM, returns up to 10 normalized results
 
 **Platform module** (`src/main/platforms/tock.js`):
 - `getOrCreateHeadlessContext(session)` — persistent Playwright browser context seeded with saved Tock session cookies, auto-closes after 5 minutes idle
 - `checkAvailability(session, tockUrl, date, partySize)` — extracts slug, gets/creates headless context, calls scraper
 - `bookSlot(session, tockUrl, date, partySize, time)` — builds booking URL, opens in user's browser via `shell.openExternal()`
+- `searchRestaurants(session, query)` — gets/creates headless context, delegates to scraper's `searchRestaurants()`
 - `closeBrowser()` — cleans up both headless context and browser instance
 
 **IPC handlers** (`src/main/index.js`):
@@ -204,7 +209,38 @@ Tock uses browser-based scraping (no public API). Booking opens the Tock page in
 - Tock "Book Now" shows "Booking page opened in your browser" message instead of inline confirmation
 - Auto-check on wizard Review step works for both platforms
 
-### Next Steps (Phase 9+)
+### Add Restaurant (Phase 9 — Complete)
+
+Users can add new restaurants beyond the 40 pre-seeded ones via platform search or paste URL.
+
+**Database** (`src/main/database.js`):
+- `createRestaurant(data)` — inserts restaurant with case-insensitive `(name, platform)` duplicate detection, returns `{ id, duplicate }`
+
+**Search functions**:
+- Resy: `searchVenues(authToken, query)` in `resy-api.js` — calls `/3/venuesearch/search` (same endpoint used by `resolveVenueId()`), returns up to 10 normalized results
+- Tock: `searchRestaurants(context, query)` in `tock-scraper.js` — scrapes `exploretock.com/search?query=...`, extracts restaurant links from DOM; wrapper in `tock.js` manages headless context
+- OpenTable: `searchRestaurants(query)` in `opentable.js` — calls public autocomplete API at `/dapi/fe/gql` (no auth needed)
+
+**IPC handlers** (`src/main/index.js`):
+- `restaurant:search` `(_, { query, platform })` — routes to Resy/Tock/OpenTable search, returns `{ success, results }` or `{ success: false, noCredentials, sessionExpired, error }`
+- `db:add-restaurant` `(_, restaurantData)` — calls `createRestaurant()`, fire-and-forget `fetchImageForRestaurant()` if no image_url provided, sends `images:complete` when done
+
+**Modal** (`src/renderer/components/AddRestaurantModal.jsx`):
+- Portal-based modal reusing `wizard-overlay`/`wizard-modal` pattern
+- Platform tabs with platform-specific colors (Resy red `#e84141`, Tock purple `#9333ea`, OpenTable dark red `#da3743`)
+- Search input + button, paste URL fallback with auto platform/name detection
+- Results list with Add button per result, duplicate warning, no-credentials message, success banner
+- `onAdded` callback refreshes parent restaurant list
+
+**Integration**:
+- `CatalogPage.jsx` — "+ Add Restaurant" button in page header (right-aligned via `page-header__row`)
+- `MonitorPage.jsx` — `<option value="__add_new__">+ Add New Restaurant...</option>` at end of restaurant select, intercepts onChange to open modal
+
+**Scheduler tuning**:
+- Release-time sniping window reduced from 60s to 30s
+- Sniping poll interval reduced from 4s to 1s
+
+### Next Steps (Phase 10+)
 
 - OpenTable API client + booking flow
 - Settings UI for poll intervals, max retries, booking preferences
