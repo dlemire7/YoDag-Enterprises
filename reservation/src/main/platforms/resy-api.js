@@ -41,12 +41,12 @@ function getHeaders(authToken) {
 }
 
 /**
- * Headers for POST requests — includes Content-Type for form-encoded body.
+ * Headers for POST requests — JSON body (newer endpoints like /3/details, /3/book).
  */
-function postHeaders(authToken) {
+function jsonPostHeaders(authToken) {
   return {
     ...getHeaders(authToken),
-    'Content-Type': 'application/x-www-form-urlencoded'
+    'Content-Type': 'application/json'
   }
 }
 
@@ -244,16 +244,18 @@ export async function findAvailability(authToken, venueId, date, partySize) {
  * Get booking details / book_token for a specific slot.
  */
 export async function getBookingDetails(authToken, configId, day, partySize) {
-  const body = new URLSearchParams({
+  const jsonBody = JSON.stringify({
     config_id: configId,
     day: day,
-    party_size: String(partySize)
+    party_size: partySize
   })
+
+  console.log(`[Resy API] POST /3/details: config_id=${configId.slice(0, 30)}... day=${day} party=${partySize}`)
 
   const res = await fetch(`${BASE_URL}/3/details`, {
     method: 'POST',
-    headers: postHeaders(authToken),
-    body: body.toString()
+    headers: jsonPostHeaders(authToken),
+    body: jsonBody
   })
 
   if (res.status === 401 || res.status === 403) {
@@ -294,17 +296,18 @@ export async function getPaymentMethod(authToken) {
  * Book a reservation using a book_token and payment method.
  */
 export async function bookReservation(authToken, bookToken, paymentMethodId) {
-  const body = new URLSearchParams({
-    book_token: bookToken
-  })
+  const payload = { book_token: bookToken }
   if (paymentMethodId) {
-    body.set('struct_payment_method', JSON.stringify({ id: paymentMethodId }))
+    // Resy expects struct_payment_method as a JSON string inside the JSON body (double-encoded)
+    payload.struct_payment_method = JSON.stringify({ id: paymentMethodId })
   }
+
+  console.log(`[Resy API] POST /3/book: book_token=${bookToken.slice(0, 30)}... payment=${paymentMethodId || 'none'}`)
 
   const res = await fetch(`${BASE_URL}/3/book`, {
     method: 'POST',
-    headers: postHeaders(authToken),
-    body: body.toString()
+    headers: jsonPostHeaders(authToken),
+    body: JSON.stringify(payload)
   })
 
   if (!res.ok) {

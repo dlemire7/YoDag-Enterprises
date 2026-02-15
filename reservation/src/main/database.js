@@ -88,6 +88,9 @@ function migrateSchema() {
   db.prepare(`UPDATE restaurants SET url = 'https://resy.com/cities/ny/laser-wolf-brooklyn' WHERE name = 'Laser Wolf' AND url != 'https://resy.com/cities/ny/laser-wolf-brooklyn'`).run()
   // Clear known-bad venue_id (58848 was a content ID, not API venue_id)
   db.prepare(`UPDATE restaurants SET venue_id = NULL WHERE name = 'Laser Wolf' AND venue_id = '58848'`).run()
+
+  // Clean up stale booking history from the Content-Type 415 bug (all were form-encoded POST failures)
+  db.prepare(`DELETE FROM booking_history WHERE status = 'failed' AND error_details LIKE '%415%'`).run()
 }
 
 export function getRestaurants() {

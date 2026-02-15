@@ -78,7 +78,7 @@ Schema migrations run in `migrateSchema()` via ALTER TABLE checks.
 
 **Resy API Client** (`src/main/platforms/resy-api.js`):
 - Pure HTTP client (no Playwright), uses Node fetch()
-- `getHeaders(token)` — for GET requests (no Content-Type); `postHeaders(token)` — for POST requests (adds Content-Type: application/x-www-form-urlencoded)
+- `getHeaders(token)` — for GET requests (no Content-Type); `jsonPostHeaders(token)` — for POST requests (adds Content-Type: application/json)
 - Required headers: `Authorization: ResyAPI api_key="VbWk7s3L4KiK5fzlO7JD3Q5EYolJI7n5"` + `X-Resy-Auth-Token: <token>`
 - `extractAuthToken(session)` — parses auth token from Playwright session localStorage
 - `resolveVenueId(authToken, url)` — resolves URL slug to venue_id (cached in DB)
@@ -130,7 +130,9 @@ IPC handlers for checking current availability and booking immediately without c
 - Inline availability results below form with Book Now per slot
 - Resets availability state when form inputs change
 
-**Resolved**: The `/4/find` HTTP 500 was caused by sending `Content-Type: application/x-www-form-urlencoded` on GET requests, which triggered Resy's WAF/server rejection. Fixed by splitting headers into `getHeaders()` (no Content-Type, for GET) and `postHeaders()` (with Content-Type, for POST). All availability checks now use direct HTTP — no browser needed.
+**Resolved issues**:
+- The `/4/find` HTTP 500 was caused by sending `Content-Type: application/x-www-form-urlencoded` on GET requests, which triggered Resy's WAF/server rejection. Fixed by splitting headers into `getHeaders()` (no Content-Type, for GET) and `postHeaders()` (with Content-Type, for POST). All availability checks now use direct HTTP — no browser needed.
+- The `/3/details` and `/3/book` POST endpoints returned HTTP 415 (Unsupported Media Type) when sent `application/x-www-form-urlencoded`. Fixed by switching to `application/json` Content-Type with JSON request body via `jsonPostHeaders()`. Booking flow now works end-to-end: findAvailability → getBookingDetails → getPaymentMethod → bookReservation.
 
 ### IPC Channels
 
