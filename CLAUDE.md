@@ -85,7 +85,7 @@ Schema migrations run in `migrateSchema()` via ALTER TABLE checks.
 - `findAvailability(authToken, venueId, date, partySize)` — GET /4/find
 - `getVenueCalendar(authToken, venueId, numSeats)` — GET /4/venue/calendar → dates with open slots
 - `getBookingDetails(authToken, configId, day, partySize)` — POST /3/details → book_token
-- `getPaymentMethod(authToken)` — GET /2/user → payment_method_id
+- `getPaymentMethod(authToken)` — GET /2/user → payment_method_id (cached in-memory for 1 hour via `_cachedPaymentMethod`)
 - `bookReservation(authToken, bookToken, paymentMethodId)` — POST /3/book
 
 **Job Status Flow**: `pending` → `monitoring` → `booked` (success) or `failed` (error/expired) or `paused` (CAPTCHA)
@@ -101,7 +101,7 @@ Schema migrations run in `migrateSchema()` via ALTER TABLE checks.
 **Platform module** (`src/main/platforms/resy.js`):
 - `browserLogin()` — Playwright-based browser login flow
 - Availability checks now handled directly by `findAvailability()` in `resy-api.js` (no browser needed)
-- `bookSlot(session, configId, day, partySize)` — chains details → payment → book
+- `bookSlot(session, configId, day, partySize)` — fetches details + payment in parallel via `Promise.all()`, then books
 - `extractResyToken(session)` — extracts auth token from session localStorage
 
 ### Instant Availability & Book Now (Phase 7 — Complete)
@@ -114,7 +114,7 @@ IPC handlers for checking current availability and booking immediately without c
 - Calls `resyPlatform.checkAvailability()` → returns `{ success, slots }` or typed error flags (`noCredentials`, `sessionExpired`, `rateLimited`)
 
 **`resy:book-now`** (params: `restaurant_id, config_id, date, party_size, time`):
-- Chains `getBookingDetails()` → `getPaymentMethod()` → `bookReservation()`
+- Runs `getBookingDetails()` and `getPaymentMethod()` in parallel via `Promise.all()`, then calls `bookReservation()`
 - On success: creates booking record (watch_job_id=null), sends desktop notification
 - On failure: records failed attempt, detects conflicts via regex `/(taken|unavailable|no longer|already.*booked|slot.*gone)/i`
 - Returns `{ success, confirmation_code }` or `{ success: false, error, conflict }`
@@ -133,6 +133,7 @@ IPC handlers for checking current availability and booking immediately without c
 **Resolved issues**:
 - The `/4/find` HTTP 500 was caused by sending `Content-Type: application/x-www-form-urlencoded` on GET requests, which triggered Resy's WAF/server rejection. Fixed by splitting headers into `getHeaders()` (no Content-Type, for GET) and `postHeaders()` (with Content-Type, for POST). All availability checks now use direct HTTP — no browser needed.
 - The `/3/details` and `/3/book` POST endpoints returned HTTP 415 (Unsupported Media Type) when sent `application/x-www-form-urlencoded`. Fixed by switching to `application/json` Content-Type with JSON request body via `jsonPostHeaders()`. Booking flow now works end-to-end: findAvailability → getBookingDetails → getPaymentMethod → bookReservation.
+- The book_token from `POST /3/details` has a short TTL. The sequential `getBookingDetails()` → `getPaymentMethod()` → `bookReservation()` flow caused 400 "invalid book_token" errors because the payment method fetch added 200-400ms of dead time before the token was used. Fixed by: (1) caching `getPaymentMethod()` result in-memory with 1-hour TTL (`_cachedPaymentMethod` in `resy-api.js`), and (2) running `getBookingDetails()` + `getPaymentMethod()` in parallel via `Promise.all()` in all three booking call sites (`index.js` `resy:book-now` handler, `scheduler.js` booking flow, `resy.js` `bookSlot()`).
 
 ### IPC Channels
 
