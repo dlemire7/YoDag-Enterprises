@@ -384,6 +384,49 @@ export async function getVenueCalendar(authToken, venueId, numSeats) {
 }
 
 /**
+ * Search Resy venues by query string. Returns up to 10 normalized results.
+ */
+export async function searchVenues(authToken, query) {
+  const searchUrl = `${BASE_URL}/3/venuesearch/search?query=${encodeURIComponent(query)}&geo={"latitude":40.7128,"longitude":-74.006}&types=["venue"]`
+  const res = await fetch(searchUrl, { headers: getHeaders(authToken) })
+
+  if (res.status === 401 || res.status === 403) {
+    throw Object.assign(new Error('Session expired'), { statusCode: res.status })
+  }
+  if (!res.ok) {
+    throw Object.assign(new Error(`Resy search error: ${res.status}`), { statusCode: res.status })
+  }
+
+  const data = await res.json()
+  const hits = data?.search?.hits || data?.results || data?.hits || []
+  const results = []
+
+  for (const hit of (Array.isArray(hits) ? hits : []).slice(0, 10)) {
+    const name = hit.name || hit.venue_name || ''
+    if (!name) continue
+
+    const slug = hit.url_slug || ''
+    const neighborhood = hit.location?.neighborhood || hit.neighborhood || ''
+    const cuisine = Array.isArray(hit.cuisine) ? hit.cuisine.join(' / ') : (hit.cuisine || '')
+    const venueId = hit.id?.resy || hit.venue_id || hit.objectID || null
+    const imageUrl = hit.images?.[0] || hit.image_url || null
+
+    results.push({
+      name,
+      neighborhood,
+      borough: '',
+      cuisine,
+      platform: 'Resy',
+      url: slug ? `https://resy.com/cities/ny/${slug}` : '',
+      venue_id: venueId ? String(venueId) : null,
+      image_url: imageUrl
+    })
+  }
+
+  return results
+}
+
+/**
  * Convert an ISO datetime or time string to a display format like "7:00 PM"
  */
 function formatTime(isoTime) {

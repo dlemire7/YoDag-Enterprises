@@ -98,6 +98,83 @@ export async function findAvailability(context, slug, date, partySize) {
 }
 
 /**
+ * Search Tock for restaurants matching a query string.
+ * Scrapes the exploretock.com search page for results.
+ * Returns up to 10 normalized results.
+ */
+export async function searchRestaurants(context, query) {
+  const page = await context.newPage()
+  try {
+    const url = `${TOCK_BASE}/search?query=${encodeURIComponent(query)}`
+    console.log(`[Tock] Searching: ${url}`)
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
+
+    // Wait for search results to render
+    await page.waitForSelector(
+      '[data-testid*="search"], .SearchResults, [class*="search-result"], [class*="SearchResult"], a[href*="exploretock.com/"]',
+      { timeout: 15000 }
+    ).catch(() => {
+      console.log('[Tock] No search result selectors found')
+    })
+
+    // Extra settle time for React rendering
+    await new Promise(r => setTimeout(r, 2000))
+
+    const results = await page.evaluate(() => {
+      const items = []
+      // Find links to restaurant pages — links like /slug (not /login, /search, etc.)
+      const links = document.querySelectorAll('a[href]')
+      const seen = new Set()
+
+      for (const link of links) {
+        if (items.length >= 10) break
+        const href = link.getAttribute('href') || ''
+        const match = href.match(/exploretock\.com\/([a-z0-9][a-z0-9-]+[a-z0-9])(?:\?|$|\/search)/) ||
+                       href.match(/^\/([a-z0-9][a-z0-9-]+[a-z0-9])(?:\?|$|\/search)/)
+        if (!match) continue
+
+        const slug = match[1]
+        // Skip known non-restaurant paths
+        if (['search', 'login', 'signup', 'about', 'help', 'terms', 'privacy', 'careers'].includes(slug)) continue
+        if (seen.has(slug)) continue
+        seen.add(slug)
+
+        // Try to get name from the link or parent
+        const container = link.closest('[class*="result"], [class*="Result"], [class*="card"], [class*="Card"], li, article') || link
+        const nameEl = container.querySelector('h2, h3, h4, [class*="name"], [class*="Name"], [class*="title"], [class*="Title"]')
+        const name = nameEl?.textContent?.trim() || link.textContent?.trim().split('\n')[0]?.trim() || slug.replace(/-/g, ' ')
+
+        const cuisineEl = container.querySelector('[class*="cuisine"], [class*="Cuisine"], [class*="category"], [class*="Category"]')
+        const cuisine = cuisineEl?.textContent?.trim() || ''
+
+        items.push({
+          name: name.length > 60 ? name.slice(0, 60) : name,
+          slug,
+          cuisine
+        })
+      }
+
+      return items
+    })
+
+    console.log(`[Tock] Found ${results.length} search results for "${query}"`)
+
+    return results.map(r => ({
+      name: r.name,
+      neighborhood: '',
+      borough: '',
+      cuisine: r.cuisine,
+      platform: 'Tock',
+      url: `${TOCK_BASE}/${r.slug}`,
+      venue_id: null,
+      image_url: null
+    }))
+  } finally {
+    await page.close()
+  }
+}
+
+/**
  * Format a display time string for Tock URL parameter.
  * "6:30 PM" → "18:30"
  */

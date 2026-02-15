@@ -7,8 +7,8 @@ import { notifyBookingSuccess, notifyBookingFailed, notifyCaptchaRequired } from
 
 const TICK_INTERVAL_MS = 10_000
 const MAX_CONCURRENT = 10
-const RELEASE_WINDOW_SEC = 60
-const RELEASE_AGGRESSIVE_INTERVAL_MS = 4_000
+const RELEASE_WINDOW_SEC = 30
+const RELEASE_AGGRESSIVE_INTERVAL_MS = 1_000
 const RELEASE_FALLBACK_AFTER_MIN = 10
 
 let intervalId = null

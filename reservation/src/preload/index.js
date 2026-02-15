@@ -18,7 +18,9 @@ const validInvokeChannels = [
   'resy:book-now',
   'resy:get-calendar',
   'tock:check-availability',
-  'tock:book-now'
+  'tock:book-now',
+  'restaurant:search',
+  'db:add-restaurant'
 ]
 
 const validSendChannels = []

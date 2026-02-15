@@ -4,6 +4,7 @@ import StatsDashboard from '../components/StatsDashboard'
 import SearchBar from '../components/SearchBar'
 import RestaurantGrid from '../components/RestaurantGrid'
 import WatchJobWizard from '../components/WatchJobWizard'
+import AddRestaurantModal from '../components/AddRestaurantModal'
 
 export default function CatalogPage() {
   const { invoke, on } = useIpc()
@@ -15,6 +16,7 @@ export default function CatalogPage() {
   const [sortBy, setSortBy] = useState('name')
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardRestaurant, setWizardRestaurant] = useState(null)
+  const [addModalOpen, setAddModalOpen] = useState(false)
 
   const refreshRestaurants = () => {
     invoke('db:get-restaurants').then(rows => {
@@ -97,10 +99,17 @@ export default function CatalogPage() {
   return (
     <div className="page">
       <div className="page-header">
-        <h2 className="page-title">Restaurant Catalog</h2>
-        <p className="page-subtitle">
-          {allRestaurants.length} elite NYC restaurants
-        </p>
+        <div className="page-header__row">
+          <div>
+            <h2 className="page-title">Restaurant Catalog</h2>
+            <p className="page-subtitle">
+              {allRestaurants.length} elite NYC restaurants
+            </p>
+          </div>
+          <button className="wizard-btn wizard-btn--primary" onClick={() => setAddModalOpen(true)}>
+            + Add Restaurant
+          </button>
+        </div>
       </div>
 
       <StatsDashboard restaurants={allRestaurants} />
@@ -137,6 +146,12 @@ export default function CatalogPage() {
         }}
         restaurants={allRestaurants}
         preselectedRestaurant={wizardRestaurant}
+      />
+
+      <AddRestaurantModal
+        isOpen={addModalOpen}
+        onClose={() => setAddModalOpen(false)}
+        onAdded={refreshRestaurants}
       />
     </div>
   )

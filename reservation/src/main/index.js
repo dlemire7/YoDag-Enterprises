@@ -1,12 +1,12 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import path from 'path'
-import { initDatabase, getRestaurants, getWatchJobs, getBookingHistory, createWatchJob, updateWatchJob, cancelWatchJob, getDatabase, closeDatabase, getRestaurantsWithoutImages, updateRestaurantImage, getRestaurantById, updateRestaurantVenueId, createBookingRecord } from './database.js'
+import { initDatabase, getRestaurants, getWatchJobs, getBookingHistory, createWatchJob, updateWatchJob, cancelWatchJob, getDatabase, closeDatabase, getRestaurantsWithoutImages, updateRestaurantImage, getRestaurantById, updateRestaurantVenueId, createBookingRecord, createRestaurant } from './database.js'
 import { seedRestaurants } from './seed-data.js'
-import { fetchAllMissingImages } from './image-fetcher.js'
+import { fetchAllMissingImages, fetchImageForRestaurant } from './image-fetcher.js'
 import { saveCredential, getCredential, deleteCredential, getAllCredentialStatuses, markValidated } from './credentials.js'
 import { startScheduler, stopScheduler, getSchedulerStatus, resumeJob } from './scheduler.js'
 import { setNotificationWindow, notifyBookingSuccess } from './notifications.js'
-import { setSessionCookies, resolveVenueId, findAvailability, getBookingDetails, getPaymentMethod, bookReservation, getVenueCalendar } from './platforms/resy-api.js'
+import { setSessionCookies, resolveVenueId, findAvailability, getBookingDetails, getPaymentMethod, bookReservation, getVenueCalendar, searchVenues } from './platforms/resy-api.js'
 import { createTray, updateContextMenu, destroyTray, createAppIcon } from './tray.js'
 import * as resyPlatform from './platforms/resy.js'
 import * as tockPlatform from './platforms/tock.js'
@@ -231,6 +231,67 @@ function registerIpcHandlers() {
         return { success: false, error: 'Tock page took too long to load. Try again.' }
       }
       return { success: false, error: err.message || 'Failed to check availability' }
+    }
+  })
+
+  // Restaurant Search — search across platforms
+  ipcMain.handle('restaurant:search', async (_, { query, platform }) => {
+    try {
+      if (platform === 'Resy') {
+        const session = getCredential('Resy')
+        if (!session) return { success: false, noCredentials: true }
+        const authToken = resyPlatform.extractResyToken(session)
+        if (!authToken) return { success: false, sessionExpired: true, error: 'Could not extract auth token' }
+        setSessionCookies(session)
+        const results = await searchVenues(authToken, query)
+        return { success: true, results }
+      }
+
+      if (platform === 'Tock') {
+        const session = getCredential('Tock')
+        if (!session) return { success: false, noCredentials: true }
+        const results = await tockPlatform.searchRestaurants(session, query)
+        return { success: true, results }
+      }
+
+      if (platform === 'OpenTable') {
+        const results = await opentablePlatform.searchRestaurants(query)
+        return { success: true, results }
+      }
+
+      return { success: false, error: `Unknown platform: ${platform}` }
+    } catch (err) {
+      const statusCode = err.statusCode || err.status
+      if (statusCode === 401 || statusCode === 403) {
+        return { success: false, error: 'Session expired — please sign in again on Settings', sessionExpired: true }
+      }
+      return { success: false, error: err.message || 'Search failed' }
+    }
+  })
+
+  // Add Restaurant to DB
+  ipcMain.handle('db:add-restaurant', async (_, restaurantData) => {
+    try {
+      const result = createRestaurant(restaurantData)
+      if (result.duplicate) {
+        return { success: false, duplicate: true, id: result.id }
+      }
+
+      // Fire-and-forget image fetch if no image provided
+      if (!restaurantData.image_url && restaurantData.name) {
+        fetchImageForRestaurant(restaurantData.name).then(imageUrl => {
+          if (imageUrl) {
+            updateRestaurantImage(result.id, imageUrl)
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('images:complete')
+            }
+          }
+        }).catch(() => {})
+      }
+
+      return { success: true, id: result.id }
+    } catch (err) {
+      return { success: false, error: err.message || 'Failed to add restaurant' }
     }
   })
 

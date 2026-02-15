@@ -4,6 +4,7 @@ import MonitorStats from '../components/MonitorStats'
 import ActiveJobs from '../components/ActiveJobs'
 import BookingHistory from '../components/BookingHistory'
 import WatchJobWizard from '../components/WatchJobWizard'
+import AddRestaurantModal from '../components/AddRestaurantModal'
 
 const TIME_SLOTS = [
   '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM',
@@ -25,6 +26,7 @@ export default function MonitorPage() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('jobs')
   const [wizardOpen, setWizardOpen] = useState(false)
+  const [addModalOpen, setAddModalOpen] = useState(false)
 
   // Quick-create form state
   const [quickRestaurant, setQuickRestaurant] = useState('')
@@ -286,12 +288,20 @@ export default function MonitorPage() {
           <select
             className="search-bar__select"
             value={quickRestaurant}
-            onChange={e => setQuickRestaurant(e.target.value)}
+            onChange={e => {
+              if (e.target.value === '__add_new__') {
+                setAddModalOpen(true)
+                e.target.value = quickRestaurant  // reset select
+              } else {
+                setQuickRestaurant(e.target.value)
+              }
+            }}
           >
             <option value="">Select Restaurant</option>
             {restaurants.map(r => (
               <option key={r.id} value={r.id}>{r.name}</option>
             ))}
+            <option value="__add_new__">+ Add New Restaurant...</option>
           </select>
           <input
             className="search-bar__input quick-create__date"
@@ -516,6 +526,14 @@ export default function MonitorPage() {
         onCreated={handleCreated}
         restaurants={restaurants}
         preselectedRestaurant={null}
+      />
+
+      <AddRestaurantModal
+        isOpen={addModalOpen}
+        onClose={() => setAddModalOpen(false)}
+        onAdded={() => {
+          invoke('db:get-restaurants').then(rows => setRestaurants(rows || []))
+        }}
       />
     </div>
   )

@@ -1,6 +1,6 @@
 import { chromium } from 'playwright'
 import { shell } from 'electron'
-import { findAvailability as scrapeAvailability, extractSlug, buildSearchUrl, formatTimeForUrl } from './tock-scraper.js'
+import { findAvailability as scrapeAvailability, extractSlug, buildSearchUrl, formatTimeForUrl, searchRestaurants as scrapeSearch } from './tock-scraper.js'
 
 const LOGIN_URL = 'https://www.exploretock.com/login'
 
@@ -103,6 +103,15 @@ async function getOrCreateHeadlessContext(session) {
 
   console.log('[Tock] Headless context created')
   return headlessContext
+}
+
+/**
+ * Search Tock for restaurants matching a query.
+ * Uses the persistent headless browser context.
+ */
+export async function searchRestaurants(session, query) {
+  const context = await getOrCreateHeadlessContext(session)
+  return scrapeSearch(context, query)
 }
 
 /**

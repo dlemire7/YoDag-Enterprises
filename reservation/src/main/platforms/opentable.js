@@ -74,3 +74,52 @@ export async function createAuthenticatedContext(session) {
 export async function checkAvailability(session, restaurantUrl, date, partySize) {
   throw new Error('Not implemented - Phase 5')
 }
+
+/**
+ * Search OpenTable for restaurants matching a query.
+ * Uses the public autocomplete/search API (no auth needed).
+ * Returns up to 10 normalized results.
+ */
+export async function searchRestaurants(query) {
+  const url = `https://www.opentable.com/dapi/fe/gql?type=restaurant&term=${encodeURIComponent(query)}&latitude=40.7128&longitude=-74.006&limit=10`
+
+  const res = await fetch(url, {
+    headers: {
+      'Accept': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+    }
+  })
+
+  if (!res.ok) {
+    throw new Error(`OpenTable search error: ${res.status}`)
+  }
+
+  const data = await res.json()
+  const restaurants = data?.restaurants || data?.items || data?.results || data?.autocomplete?.restaurants || []
+  const results = []
+
+  for (const r of (Array.isArray(restaurants) ? restaurants : []).slice(0, 10)) {
+    const name = r.name || r.restaurantName || ''
+    if (!name) continue
+
+    const neighborhood = r.neighborhood || r.location?.neighborhood || ''
+    const cuisine = r.primaryCuisine || r.cuisine || ''
+    const slug = r.profileLink || r.urlSlug || r.macroId || ''
+    const profileUrl = slug
+      ? (slug.startsWith('http') ? slug : `https://www.opentable.com${slug.startsWith('/') ? '' : '/'}${slug}`)
+      : ''
+
+    results.push({
+      name,
+      neighborhood,
+      borough: '',
+      cuisine,
+      platform: 'OpenTable',
+      url: profileUrl,
+      venue_id: r.rid ? String(r.rid) : null,
+      image_url: r.primaryPhoto || r.photos?.[0]?.url || null
+    })
+  }
+
+  return results
+}

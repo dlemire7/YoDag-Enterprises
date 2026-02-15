@@ -216,6 +216,35 @@ export function createBookingRecord({ watch_job_id, restaurant, date, time, part
   return id
 }
 
+export function createRestaurant({ name, neighborhood, borough, cuisine, stars, criteria, platform, reservation_release, url, image_url, venue_id }) {
+  const existing = db.prepare(
+    'SELECT id FROM restaurants WHERE LOWER(name) = LOWER(?) AND LOWER(platform) = LOWER(?)'
+  ).get(name, platform)
+
+  if (existing) {
+    return { id: existing.id, duplicate: true }
+  }
+
+  const result = db.prepare(`
+    INSERT INTO restaurants (name, neighborhood, borough, cuisine, stars, criteria, platform, reservation_release, url, image_url, venue_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    name,
+    neighborhood || null,
+    borough || null,
+    cuisine || null,
+    stars || 0,
+    criteria || null,
+    platform || null,
+    reservation_release || null,
+    url || null,
+    image_url || null,
+    venue_id || null
+  )
+
+  return { id: result.lastInsertRowid, duplicate: false }
+}
+
 export function closeDatabase() {
   if (db) {
     db.close()
