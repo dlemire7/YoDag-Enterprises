@@ -45,12 +45,25 @@ function getHeaders(authToken) {
 }
 
 /**
- * Headers for POST requests — JSON body (newer endpoints like /3/details, /3/book).
+ * Headers for POST requests — JSON body (e.g. /3/details).
  */
 function jsonPostHeaders(authToken) {
   return {
     ...getHeaders(authToken),
     'Content-Type': 'application/json'
+  }
+}
+
+/**
+ * Headers for POST requests — form-urlencoded body (e.g. /3/book).
+ * Uses widgets.resy.com origin to match the booking widget's expected headers.
+ */
+function formPostHeaders(authToken) {
+  return {
+    ...getHeaders(authToken),
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Origin': 'https://widgets.resy.com',
+    'Referer': 'https://widgets.resy.com/'
   }
 }
 
@@ -307,22 +320,23 @@ export async function getPaymentMethod(authToken) {
  * Book a reservation using a book_token and payment method.
  */
 export async function bookReservation(authToken, bookToken, paymentMethodId) {
-  const payload = { book_token: bookToken }
+  const params = new URLSearchParams()
+  params.append('book_token', bookToken)
   if (paymentMethodId) {
-    // Resy expects struct_payment_method as a JSON string inside the JSON body (double-encoded)
-    payload.struct_payment_method = JSON.stringify({ id: paymentMethodId })
+    params.append('struct_payment_method', JSON.stringify({ id: paymentMethodId }))
   }
 
   console.log(`[Resy API] POST /3/book: book_token=${bookToken.slice(0, 30)}... payment=${paymentMethodId || 'none'}`)
 
   const res = await fetch(`${BASE_URL}/3/book`, {
     method: 'POST',
-    headers: jsonPostHeaders(authToken),
-    body: JSON.stringify(payload)
+    headers: formPostHeaders(authToken),
+    body: params.toString()
   })
 
   if (!res.ok) {
     const text = await res.text().catch(() => '')
+    console.error(`[Resy API] POST /3/book FAILED: ${res.status} — ${text.slice(0, 500)}`)
     throw Object.assign(
       new Error(`Booking failed: ${res.status} ${text}`),
       { statusCode: res.status }

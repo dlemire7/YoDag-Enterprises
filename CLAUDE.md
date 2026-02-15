@@ -78,7 +78,7 @@ Schema migrations run in `migrateSchema()` via ALTER TABLE checks.
 
 **Resy API Client** (`src/main/platforms/resy-api.js`):
 - Pure HTTP client (no Playwright), uses Node fetch()
-- `getHeaders(token)` — for GET requests (no Content-Type); `jsonPostHeaders(token)` — for POST requests (adds Content-Type: application/json)
+- `getHeaders(token)` — for GET requests (no Content-Type); `jsonPostHeaders(token)` — for JSON POST requests (e.g. /3/details); `formPostHeaders(token)` — for form-urlencoded POST requests with widgets.resy.com origin (e.g. /3/book)
 - Required headers: `Authorization: ResyAPI api_key="VbWk7s3L4KiK5fzlO7JD3Q5EYolJI7n5"` + `X-Resy-Auth-Token: <token>`
 - `extractAuthToken(session)` — parses auth token from Playwright session localStorage
 - `resolveVenueId(authToken, url)` — resolves URL slug to venue_id (cached in DB)
@@ -132,7 +132,8 @@ IPC handlers for checking current availability and booking immediately without c
 
 **Resolved issues**:
 - The `/4/find` HTTP 500 was caused by sending `Content-Type: application/x-www-form-urlencoded` on GET requests, which triggered Resy's WAF/server rejection. Fixed by splitting headers into `getHeaders()` (no Content-Type, for GET) and `postHeaders()` (with Content-Type, for POST). All availability checks now use direct HTTP — no browser needed.
-- The `/3/details` and `/3/book` POST endpoints returned HTTP 415 (Unsupported Media Type) when sent `application/x-www-form-urlencoded`. Fixed by switching to `application/json` Content-Type with JSON request body via `jsonPostHeaders()`. Booking flow now works end-to-end: findAvailability → getBookingDetails → getPaymentMethod → bookReservation.
+- The `/3/details` POST endpoint returned HTTP 415 (Unsupported Media Type) when sent `application/x-www-form-urlencoded`. Fixed by using `application/json` Content-Type with JSON request body via `jsonPostHeaders()`.
+- The `/3/book` POST endpoint returned 400 "invalid book_token" when sent `application/json`. This is a booking widget endpoint that expects `application/x-www-form-urlencoded` with `Origin: https://widgets.resy.com`. Fixed by adding `formPostHeaders()` (form-urlencoded + widget origin/referer) and switching `bookReservation()` to use `URLSearchParams` for the form body.
 - The book_token from `POST /3/details` has a short TTL. The sequential `getBookingDetails()` → `getPaymentMethod()` → `bookReservation()` flow caused 400 "invalid book_token" errors because the payment method fetch added 200-400ms of dead time before the token was used. Fixed by: (1) caching `getPaymentMethod()` result in-memory with 1-hour TTL (`_cachedPaymentMethod` in `resy-api.js`), and (2) running `getBookingDetails()` + `getPaymentMethod()` in parallel via `Promise.all()` in all three booking call sites (`index.js` `resy:book-now` handler, `scheduler.js` booking flow, `resy.js` `bookSlot()`).
 
 ### IPC Channels

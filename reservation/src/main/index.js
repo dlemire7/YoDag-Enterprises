@@ -287,6 +287,7 @@ function registerIpcHandlers() {
       if (!bookToken) return { success: false, error: 'Could not get booking details — slot may no longer be available', conflict: true }
 
       const result = await bookReservation(authToken, bookToken, paymentMethodId)
+      console.log(`[Book Now] bookReservation returned:`, JSON.stringify(result).slice(0, 500))
 
       if (result.success) {
         createBookingRecord({
@@ -308,6 +309,7 @@ function registerIpcHandlers() {
       return { success: false, error: 'Booking request failed' }
     } catch (err) {
       const errMsg = err.message || 'Booking failed'
+      console.error(`[Book Now] ERROR: ${errMsg}`, err.statusCode ? `(HTTP ${err.statusCode})` : '')
       const conflict = /(taken|unavailable|no longer|already.*booked|slot.*gone)/i.test(errMsg)
 
       createBookingRecord({
