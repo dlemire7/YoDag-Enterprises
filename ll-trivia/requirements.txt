@@ -1,6 +1,0 @@
-flask
-sqlalchemy
-requests
-beautifulsoup4
-lxml
-anthropic
