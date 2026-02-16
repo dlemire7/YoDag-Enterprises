@@ -19,6 +19,8 @@ class Question(db.Model):
     question_text = db.Column(db.Text, nullable=False)
     answer = db.Column(db.Text, nullable=False)
     category = db.Column(db.String(50), nullable=False)
+    subcategory = db.Column(db.String(100), nullable=True)
+    subcategory_secondary = db.Column(db.String(100), nullable=True)
     percent_correct = db.Column(db.Float, nullable=True)
     is_ai_generated = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -43,6 +45,8 @@ class Question(db.Model):
             'question_text': self.question_text,
             'answer': self.answer,
             'category': self.category,
+            'subcategory': self.subcategory,
+            'subcategory_secondary': self.subcategory_secondary,
             'percent_correct': self.percent_correct,
             'is_ai_generated': self.is_ai_generated,
             'created_at': self.created_at.isoformat() if self.created_at else None,

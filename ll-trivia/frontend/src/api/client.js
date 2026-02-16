@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:5000/api/v1';
+const API_BASE = `${window.location.protocol}//${window.location.hostname}:5000/api/v1`;
 
 async function request(path, options = {}) {
   const url = `${API_BASE}${path}`;
@@ -23,6 +23,9 @@ export const getQuestions = (params = {}) => {
   return request(`/questions?${qs}`);
 };
 export const getQuestion = (id) => request(`/questions/${id}`);
+
+// Subcategories
+export const getSubcategories = (category) => request(`/subcategories?category=${encodeURIComponent(category)}`);
 
 // Progress
 export const recordProgress = (questionId, confidence) =>

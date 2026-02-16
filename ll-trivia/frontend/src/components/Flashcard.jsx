@@ -168,6 +168,20 @@ export default function Flashcard({
           {/* Top bar */}
           <div style={topBarStyle}>
             <span style={categoryPillStyle}>{question.category}</span>
+            {question.subcategory && (
+              <span style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9,
+                letterSpacing: 0.5,
+                background: `${primary}11`,
+                color: accent,
+                padding: '3px 8px',
+                borderRadius: 'var(--radius-sm)',
+                opacity: 0.75,
+              }}>
+                {question.subcategory}
+              </span>
+            )}
             {difficulty && <span style={difficultyBadgeStyle}>{difficulty.label}</span>}
             {question.is_ai_generated && (
               <span style={{
@@ -219,6 +233,20 @@ export default function Flashcard({
           {/* Top bar */}
           <div style={topBarStyle}>
             <span style={categoryPillStyle}>{question.category}</span>
+            {question.subcategory && (
+              <span style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9,
+                letterSpacing: 0.5,
+                background: `${primary}11`,
+                color: accent,
+                padding: '3px 8px',
+                borderRadius: 'var(--radius-sm)',
+                opacity: 0.75,
+              }}>
+                {question.subcategory}
+              </span>
+            )}
             {difficulty && <span style={difficultyBadgeStyle}>{difficulty.label}</span>}
             {question.is_ai_generated && (
               <span style={{

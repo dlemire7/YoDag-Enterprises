@@ -9,6 +9,7 @@ import {
   recordProgress,
   toggleBookmark,
   getStatsCategories,
+  getSubcategories,
 } from '../api/client';
 import Flashcard from '../components/Flashcard';
 import RatingButtons from '../components/RatingButtons';
@@ -69,6 +70,9 @@ export default function Study() {
     return MODES.some((mo) => mo.key === m) ? m : 'flashcard';
   });
   const [category, setCategory] = useState(() => searchParams.get('category') || 'All Categories');
+  const [subcategory, setSubcategory] = useState(() => searchParams.get('subcategory') || '');
+  const [availableSubcategories, setAvailableSubcategories] = useState([]);
+  const [subcategoriesLoading, setSubcategoriesLoading] = useState(false);
   const [difficulty, setDifficulty] = useState(() => searchParams.get('difficulty') || '');
 
   // Quiz-specific config
@@ -137,14 +141,40 @@ export default function Study() {
     return () => { cancelled = true; };
   }, [mode]);
 
+  // Fetch subcategories when category changes
+  useEffect(() => {
+    const effectiveCategory = isDeepDiveMode ? deepDiveCategory : category;
+    if (!effectiveCategory || effectiveCategory === 'All Categories') {
+      setAvailableSubcategories([]);
+      setSubcategory('');
+      return;
+    }
+    let cancelled = false;
+    setSubcategoriesLoading(true);
+    getSubcategories(effectiveCategory)
+      .then((data) => {
+        if (cancelled) return;
+        setAvailableSubcategories(Array.isArray(data) ? data : []);
+      })
+      .catch(() => { if (!cancelled) setAvailableSubcategories([]); })
+      .finally(() => { if (!cancelled) setSubcategoriesLoading(false); });
+    return () => { cancelled = true; };
+  }, [category, deepDiveCategory, isDeepDiveMode]);
+
+  // Reset subcategory when category changes
+  useEffect(() => {
+    setSubcategory('');
+  }, [category, deepDiveCategory]);
+
   // Sync state to URL params
   useEffect(() => {
     const params = {};
     if (mode !== 'flashcard') params.mode = mode;
     if (category !== 'All Categories') params.category = category;
+    if (subcategory) params.subcategory = subcategory;
     if (difficulty) params.difficulty = difficulty;
     setSearchParams(params, { replace: true });
-  }, [mode, category, difficulty, setSearchParams]);
+  }, [mode, category, subcategory, difficulty, setSearchParams]);
 
   // Fetch full question details when currentQuestion changes
   useEffect(() => {
@@ -222,6 +252,7 @@ export default function Study() {
       } else if (category !== 'All Categories') {
         params.category = category;
       }
+      if (subcategory) params.subcategory = subcategory;
       if (difficulty) params.difficulty = difficulty;
       params.mode = MODE_TO_API[mode] || 'all';
 
@@ -418,6 +449,7 @@ export default function Study() {
     setTimerExpired(false);
     setRevengeFocus('all');
     setDeepDiveCategory(null);
+    setSubcategory('');
   };
 
   // ---- Keyboard shortcuts ----
@@ -619,6 +651,28 @@ export default function Study() {
                   </select>
                 </div>
               </div>
+
+              {/* Subcategory dropdown */}
+              {category !== 'All Categories' && availableSubcategories.length > 0 && (
+                <div>
+                  <div className="mono-label" style={{ color: 'var(--text-muted)', marginBottom: 'var(--space-xs)' }}>
+                    Subcategory
+                  </div>
+                  <select
+                    value={subcategory}
+                    onChange={(e) => setSubcategory(e.target.value)}
+                    style={selectStyle}
+                    disabled={subcategoriesLoading}
+                  >
+                    <option value="">All Subcategories ({availableSubcategories.reduce((s, sc) => s + sc.count, 0)})</option>
+                    {availableSubcategories.map((sc) => (
+                      <option key={sc.subcategory} value={sc.subcategory}>
+                        {sc.subcategory} ({sc.count})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Row 2: Quiz-specific config */}
               {isQuizMode && (
@@ -926,6 +980,42 @@ export default function Study() {
                   </div>
                 )}
               </div>
+
+              {/* Subcategory chips for Deep Dive narrowing */}
+              {deepDiveCategory && availableSubcategories.length > 0 && (
+                <div>
+                  <div className="mono-label" style={{ color: 'var(--text-muted)', marginBottom: 'var(--space-sm)', letterSpacing: 1.5 }}>
+                    Narrow by Subcategory (optional)
+                  </div>
+                  <div style={{ display: 'flex', gap: 'var(--space-xs)', flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => setSubcategory('')}
+                      style={{
+                        ...chipStyle(!subcategory),
+                        borderColor: !subcategory ? `${getCategoryColor(deepDiveCategory).accent}44` : 'var(--border)',
+                        color: !subcategory ? getCategoryColor(deepDiveCategory).accent : 'var(--text-muted)',
+                        background: !subcategory ? `rgba(${hexToRgb(getCategoryColor(deepDiveCategory).primary)}, 0.12)` : 'var(--surface)',
+                      }}
+                    >
+                      All
+                    </button>
+                    {availableSubcategories.map((sc) => (
+                      <button
+                        key={sc.subcategory}
+                        onClick={() => setSubcategory(subcategory === sc.subcategory ? '' : sc.subcategory)}
+                        style={{
+                          ...chipStyle(subcategory === sc.subcategory),
+                          borderColor: subcategory === sc.subcategory ? `${getCategoryColor(deepDiveCategory).accent}44` : 'var(--border)',
+                          color: subcategory === sc.subcategory ? getCategoryColor(deepDiveCategory).accent : 'var(--text-muted)',
+                          background: subcategory === sc.subcategory ? `rgba(${hexToRgb(getCategoryColor(deepDiveCategory).primary)}, 0.12)` : 'var(--surface)',
+                        }}
+                      >
+                        {sc.subcategory} ({sc.count})
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

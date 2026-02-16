@@ -37,6 +37,7 @@ api = Blueprint('api', __name__)
 @api.route('/api/v1/questions', methods=['GET'])
 def list_questions():
     category = request.args.get('category')
+    subcategory = request.args.get('subcategory')
     difficulty = request.args.get('difficulty')
     mode = request.args.get('mode', 'all')
     limit = request.args.get('limit', 20, type=int)
@@ -47,6 +48,10 @@ def list_questions():
     # Category filter
     if category:
         query = query.filter(Question.category == category)
+
+    # Subcategory filter
+    if subcategory:
+        query = query.filter(Question.subcategory == subcategory)
 
     # Difficulty filter (based on percent_correct)
     if difficulty == 'easy':
@@ -104,6 +109,32 @@ def get_question(question_id):
     result['bookmarked'] = question.bookmark is not None
 
     return jsonify(result)
+
+
+# ===========================================================================
+# SUBCATEGORIES
+# ===========================================================================
+
+@api.route('/api/v1/subcategories', methods=['GET'])
+def list_subcategories():
+    category = request.args.get('category')
+    if not category:
+        return jsonify({'error': 'category parameter required'}), 400
+
+    results = (db.session.query(
+        Question.subcategory,
+        db.func.count(Question.id)
+    )
+        .filter(Question.category == category,
+                Question.subcategory.isnot(None))
+        .group_by(Question.subcategory)
+        .order_by(Question.subcategory)
+        .all())
+
+    return jsonify([
+        {'subcategory': name, 'count': count}
+        for name, count in results
+    ])
 
 
 # ===========================================================================
