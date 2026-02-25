@@ -5,7 +5,7 @@ import os
 import threading
 from datetime import datetime, timedelta
 
-from flask import Blueprint, Flask, Response, jsonify, request
+from flask import Blueprint, Flask, Response, abort, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 from config import (ANTHROPIC_API_KEY, LL_CATEGORIES, SECRET_KEY,
@@ -1075,7 +1075,7 @@ def seed_from_file(app):
 
 
 def create_app():
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder='dist', static_url_path='')
     app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['SECRET_KEY'] = SECRET_KEY
@@ -1084,6 +1084,16 @@ def create_app():
     CORS(app)
 
     app.register_blueprint(api)
+
+    @app.route('/', defaults={'path': ''})
+    @app.route('/<path:path>')
+    def serve_react(path):
+        if path.startswith('api/'):
+            abort(404)
+        dist_path = os.path.join(app.static_folder, path)
+        if path and os.path.exists(dist_path):
+            return send_from_directory(app.static_folder, path)
+        return send_from_directory(app.static_folder, 'index.html')
 
     with app.app_context():
         db.create_all()
@@ -1097,6 +1107,7 @@ def create_app():
     return app
 
 
+app = create_app()   # module-level, used by gunicorn
+
 if __name__ == '__main__':
-    app = create_app()
     app.run(debug=True, port=5000)
