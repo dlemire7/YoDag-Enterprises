@@ -1,6 +1,6 @@
 # LL Trivia Study App v2 — Build Progress
 
-**Last Updated:** 2026-02-15
+**Last Updated:** 2026-02-26
 
 ---
 
@@ -158,11 +158,33 @@ Open `http://localhost:5173` in your browser.
 
 ---
 
+## Deployment (Render) ✅
+
+Deployed as a single Render Web Service — Flask serves the React build as static files.
+
+**URL:** https://ll-trivia-v2.onrender.com
+
+**Strategy:** Option 3 — Flask serves React build
+- Vite builds React into `backend/dist/` via `build.outDir: '../backend/dist'`
+- Flask configured with `static_folder='dist'` + SPA catch-all route
+- `app = create_app()` exposed at module level for gunicorn
+- Single Render Web Service: one process, one URL, no CORS needed
+
+**Render Service Config:**
+- Runtime: Python
+- Build Command: `cd ll-trivia-v2/frontend && npm install && npm run build && pip install -r ../backend/requirements.txt`
+- Start Command: `cd ll-trivia-v2/backend && gunicorn app:app`
+- Env vars: `FLASK_SECRET_KEY` (auto-generated), `ANTHROPIC_API_KEY` (set manually in dashboard)
+
+**Note:** Free tier has ephemeral filesystem — `trivia.db` resets on each deploy. Questions are re-seeded automatically from `questions_seed.json` on startup. Study progress is lost on redeploy.
+
+---
+
 ## Remaining / Future Work
 
 - [ ] Preload seasons 60+ (requires LL credentials to run scraper)
 - [ ] Code-split Recharts to reduce bundle size (currently 769KB)
 - [ ] Add tests (pytest backend, Vitest frontend)
 - [ ] Add ESLint/Prettier/ruff linting
-- [ ] Production build: Flask serves React dist
 - [ ] Responsive mobile layout
+- [ ] Add Render Disk ($1/mo) to persist SQLite DB across deploys
