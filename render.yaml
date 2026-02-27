@@ -2,7 +2,7 @@ services:
   - type: web
     name: ll-trivia-v2
     runtime: python
-    buildCommand: cd ll-trivia-v2/frontend && npm install && npm run build && cd ../backend && pip install -r requirements.txt
+    buildCommand: cd ll-trivia-v2/frontend && npm install && npm run build && pip install -r ../backend/requirements.txt && cd ../backend && python -c "from app import create_app; create_app()"
     startCommand: cd ll-trivia-v2/backend && gunicorn app:app
     envVars:
       - key: FLASK_SECRET_KEY

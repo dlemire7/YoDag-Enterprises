@@ -1100,9 +1100,7 @@ def create_app():
 
         # Check if questions table is empty and seed if needed
         if Question.query.count() == 0:
-            thread = threading.Thread(
-                target=seed_from_file, args=(app,), daemon=True)
-            thread.start()
+            seed_from_file(app)
 
     return app
 
