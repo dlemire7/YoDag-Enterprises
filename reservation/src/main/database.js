@@ -91,6 +91,46 @@ function migrateSchema() {
 
   // Clean up stale booking history from the Content-Type 415 bug (all were form-encoded POST failures)
   db.prepare(`DELETE FROM booking_history WHERE status = 'failed' AND error_details LIKE '%415%'`).run()
+
+  const hasBeliLists = columns.some(col => col.name === 'beli_lists')
+  if (!hasBeliLists) {
+    db.exec('ALTER TABLE restaurants ADD COLUMN beli_lists TEXT')
+  }
+
+  const hasGoogleRating = columns.some(col => col.name === 'google_rating')
+  if (!hasGoogleRating) {
+    db.exec('ALTER TABLE restaurants ADD COLUMN google_rating REAL')
+  }
+  const hasGoogleUrl = columns.some(col => col.name === 'google_url')
+  if (!hasGoogleUrl) {
+    db.exec('ALTER TABLE restaurants ADD COLUMN google_url TEXT')
+  }
+
+  // Remove duplicate restaurants (same name, different platform) that were added
+  // after seed data. Keep the earliest entry (lowest id, from seed) and delete later dupes.
+  // Only delete if the dupe has no active watch jobs.
+  db.prepare(`
+    DELETE FROM restaurants WHERE id IN (
+      SELECT r2.id FROM restaurants r1
+      JOIN restaurants r2 ON LOWER(r1.name) = LOWER(r2.name) AND r1.id < r2.id
+      WHERE r2.id NOT IN (SELECT restaurant_id FROM watch_jobs WHERE status IN ('pending', 'monitoring'))
+    )
+  `).run()
+
+  // Fix restaurants that were incorrectly seeded with wrong platforms/URLs
+  const platformFixes = [
+    { name: 'Per Se', platform: 'Tock', url: 'https://www.exploretock.com/perse', release: 'Monthly drop' },
+    { name: 'Aquavit', platform: 'Tock', url: 'https://www.exploretock.com/aquavit', release: 'Monthly drop' },
+    { name: 'Jungsik', platform: 'Tock', url: 'https://www.exploretock.com/jungsik', release: 'Monthly drop' },
+    { name: 'Blue Hill', platform: 'Tock', url: 'https://www.exploretock.com/bluehillnyc', release: 'Monthly drop' },
+    { name: 'Estela', platform: 'Tock', url: 'https://www.exploretock.com/estela', release: 'Monthly drop' },
+    { name: 'The Musket Room', platform: 'Tock', url: 'https://www.exploretock.com/themusketroom', release: 'Monthly drop' },
+    { name: '63 Clinton', platform: 'Resy', url: 'https://resy.com/cities/new-york-ny/venues/sixty-three-clinton', release: '14 days ahead' },
+  ]
+  const fixStmt = db.prepare('UPDATE restaurants SET platform = ?, url = ?, reservation_release = ?, venue_id = NULL WHERE LOWER(name) = LOWER(?)')
+  for (const fix of platformFixes) {
+    fixStmt.run(fix.platform, fix.url, fix.release, fix.name)
+  }
 }
 
 export function getRestaurants() {
@@ -189,6 +229,14 @@ export function updateRestaurantImage(id, imageUrl) {
   db.prepare('UPDATE restaurants SET image_url = ? WHERE id = ?').run(imageUrl, id)
 }
 
+export function getRestaurantsWithoutGoogleData() {
+  return db.prepare('SELECT id, name FROM restaurants WHERE google_rating IS NULL ORDER BY id').all()
+}
+
+export function updateRestaurantGoogleData(id, googleRating, googleUrl) {
+  db.prepare('UPDATE restaurants SET google_rating = ?, google_url = ? WHERE id = ?').run(googleRating, googleUrl, id)
+}
+
 export function getActiveWatchJobs() {
   return db.prepare(`
     SELECT wj.*, r.name as restaurant_name, r.platform as restaurant_platform, r.url, r.venue_id, r.reservation_release
@@ -216,18 +264,19 @@ export function createBookingRecord({ watch_job_id, restaurant, date, time, part
   return id
 }
 
-export function createRestaurant({ name, neighborhood, borough, cuisine, stars, criteria, platform, reservation_release, url, image_url, venue_id }) {
+export function createRestaurant({ name, neighborhood, borough, cuisine, stars, criteria, platform, reservation_release, url, image_url, venue_id, beli_lists }) {
+  // Check for duplicate by name (any platform) — a restaurant should only appear once
   const existing = db.prepare(
-    'SELECT id FROM restaurants WHERE LOWER(name) = LOWER(?) AND LOWER(platform) = LOWER(?)'
-  ).get(name, platform)
+    'SELECT id, platform FROM restaurants WHERE LOWER(name) = LOWER(?)'
+  ).get(name)
 
   if (existing) {
-    return { id: existing.id, duplicate: true }
+    return { id: existing.id, duplicate: true, existingPlatform: existing.platform }
   }
 
   const result = db.prepare(`
-    INSERT INTO restaurants (name, neighborhood, borough, cuisine, stars, criteria, platform, reservation_release, url, image_url, venue_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO restaurants (name, neighborhood, borough, cuisine, stars, criteria, platform, reservation_release, url, image_url, venue_id, beli_lists)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     name,
     neighborhood || null,
@@ -239,10 +288,40 @@ export function createRestaurant({ name, neighborhood, borough, cuisine, stars, 
     reservation_release || null,
     url || null,
     image_url || null,
-    venue_id || null
+    venue_id || null,
+    beli_lists || null
   )
 
   return { id: result.lastInsertRowid, duplicate: false }
+}
+
+export function updateRestaurantBeliLists(id, beliLists) {
+  db.prepare('UPDATE restaurants SET beli_lists = ? WHERE id = ?').run(beliLists, id)
+}
+
+export function findRestaurantByName(name) {
+  return db.prepare('SELECT * FROM restaurants WHERE LOWER(name) = LOWER(?)').get(name)
+}
+
+export function getUnknownPlatformRestaurants() {
+  return db.prepare("SELECT * FROM restaurants WHERE platform = 'Unknown' ORDER BY name").all()
+}
+
+export function updateRestaurantPlatform(id, { platform, url, venue_id, image_url, reservation_release }) {
+  const updates = []
+  const values = []
+  if (platform !== undefined) { updates.push('platform = ?'); values.push(platform) }
+  if (url !== undefined) { updates.push('url = ?'); values.push(url) }
+  if (venue_id !== undefined) { updates.push('venue_id = ?'); values.push(venue_id) }
+  if (image_url !== undefined) { updates.push('image_url = ?'); values.push(image_url) }
+  if (reservation_release !== undefined) { updates.push('reservation_release = ?'); values.push(reservation_release) }
+  if (updates.length === 0) return
+  values.push(id)
+  db.prepare(`UPDATE restaurants SET ${updates.join(', ')} WHERE id = ?`).run(...values)
+}
+
+export function getBookableRestaurants() {
+  return db.prepare("SELECT * FROM restaurants WHERE platform IN ('Resy', 'Tock') AND url IS NOT NULL ORDER BY platform, name").all()
 }
 
 export function closeDatabase() {

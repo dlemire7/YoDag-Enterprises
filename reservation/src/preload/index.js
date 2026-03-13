@@ -20,16 +20,28 @@ const validInvokeChannels = [
   'tock:check-availability',
   'tock:book-now',
   'restaurant:search',
-  'db:add-restaurant'
+  'db:add-restaurant',
+  'db:resolve-beli-platforms',
+  'find:search-available',
+  'credentials:validate',
+  'db:fetch-google-data'
 ]
 
-const validSendChannels = []
+const validSendChannels = [
+  'find:cancel'
+]
 
 const validReceiveChannels = [
   'images:progress',
   'images:complete',
   'monitor:job-update',
-  'monitor:captcha-required'
+  'monitor:captcha-required',
+  'beli:resolve-progress',
+  'find:result',
+  'find:progress',
+  'credentials:status-update',
+  'google:progress',
+  'google:complete'
 ]
 
 contextBridge.exposeInMainWorld('api', {

@@ -101,7 +101,8 @@ export default function AddRestaurantModal({ isOpen, onClose, onAdded }) {
     try {
       const res = await invoke('db:add-restaurant', restaurant)
       if (res.duplicate) {
-        setDuplicateMsg(`"${restaurant.name}" is already in your catalog.`)
+        const platformNote = res.existingPlatform ? ` (on ${res.existingPlatform})` : ''
+        setDuplicateMsg(`"${restaurant.name}" is already in your catalog${platformNote}.`)
       } else if (res.success) {
         setSuccessMsg(`"${restaurant.name}" added to catalog!`)
         if (onAdded) onAdded()

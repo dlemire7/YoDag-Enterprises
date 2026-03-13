@@ -1,9 +1,10 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import path from 'path'
-import { initDatabase, getRestaurants, getWatchJobs, getBookingHistory, createWatchJob, updateWatchJob, cancelWatchJob, getDatabase, closeDatabase, getRestaurantsWithoutImages, updateRestaurantImage, getRestaurantById, updateRestaurantVenueId, createBookingRecord, createRestaurant } from './database.js'
+import { initDatabase, getRestaurants, getWatchJobs, getBookingHistory, createWatchJob, updateWatchJob, cancelWatchJob, getDatabase, closeDatabase, getRestaurantsWithoutImages, updateRestaurantImage, getRestaurantById, updateRestaurantVenueId, createBookingRecord, createRestaurant, getUnknownPlatformRestaurants, updateRestaurantPlatform, getBookableRestaurants, getRestaurantsWithoutGoogleData, updateRestaurantGoogleData } from './database.js'
 import { seedRestaurants } from './seed-data.js'
 import { fetchAllMissingImages, fetchImageForRestaurant } from './image-fetcher.js'
-import { saveCredential, getCredential, deleteCredential, getAllCredentialStatuses, markValidated } from './credentials.js'
+import { fetchAllMissingGoogleData } from './google-fetcher.js'
+import { saveCredential, getCredential, deleteCredential, getAllCredentialStatuses, markValidated, validateResySession } from './credentials.js'
 import { startScheduler, stopScheduler, getSchedulerStatus, resumeJob } from './scheduler.js'
 import { setNotificationWindow, notifyBookingSuccess } from './notifications.js'
 import { setSessionCookies, resolveVenueId, findAvailability, getBookingDetails, getPaymentMethod, bookReservation, getVenueCalendar, searchVenues } from './platforms/resy-api.js'
@@ -100,6 +101,20 @@ function registerIpcHandlers() {
     return { fetched, total: missing.length }
   })
 
+  ipcMain.handle('db:fetch-google-data', async () => {
+    const missing = getRestaurantsWithoutGoogleData()
+    if (missing.length === 0) return { fetched: 0, total: 0 }
+    const fetched = await fetchAllMissingGoogleData(missing, updateRestaurantGoogleData, (done, total, name) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('google:progress', { done, total, name })
+      }
+    })
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('google:complete')
+    }
+    return { fetched, total: missing.length }
+  })
+
   // Credential Management
   ipcMain.handle('credentials:get-all-statuses', async () => {
     return getAllCredentialStatuses()
@@ -128,6 +143,11 @@ function registerIpcHandlers() {
       markValidated(platform)
     }
     return result
+  })
+
+  // Credential validation — on-demand revalidation from renderer
+  ipcMain.handle('credentials:validate', async () => {
+    return validateCredentials()
   })
 
   ipcMain.handle('monitor:get-status', async () => {
@@ -236,14 +256,17 @@ function registerIpcHandlers() {
 
   // Restaurant Search — search across platforms
   ipcMain.handle('restaurant:search', async (_, { query, platform }) => {
+    console.log(`[Search] Searching ${platform} for "${query}"`)
     try {
       if (platform === 'Resy') {
         const session = getCredential('Resy')
-        if (!session) return { success: false, noCredentials: true }
+        if (!session) { console.log('[Search] No Resy credentials'); return { success: false, noCredentials: true } }
         const authToken = resyPlatform.extractResyToken(session)
-        if (!authToken) return { success: false, sessionExpired: true, error: 'Could not extract auth token' }
+        if (!authToken) { console.log('[Search] Could not extract Resy auth token'); return { success: false, sessionExpired: true, error: 'Could not extract auth token' } }
         setSessionCookies(session)
+        console.log(`[Search] Calling Resy searchVenues with token ${authToken.slice(0, 6)}...`)
         const results = await searchVenues(authToken, query)
+        console.log(`[Search] Resy returned ${results.length} results`)
         return { success: true, results }
       }
 
@@ -261,6 +284,7 @@ function registerIpcHandlers() {
 
       return { success: false, error: `Unknown platform: ${platform}` }
     } catch (err) {
+      console.error(`[Search] Error searching ${platform}:`, err.message, err.statusCode ? `(HTTP ${err.statusCode})` : '')
       const statusCode = err.statusCode || err.status
       if (statusCode === 401 || statusCode === 403) {
         return { success: false, error: 'Session expired — please sign in again on Settings', sessionExpired: true }
@@ -274,7 +298,7 @@ function registerIpcHandlers() {
     try {
       const result = createRestaurant(restaurantData)
       if (result.duplicate) {
-        return { success: false, duplicate: true, id: result.id }
+        return { success: false, duplicate: true, id: result.id, existingPlatform: result.existingPlatform }
       }
 
       // Fire-and-forget image fetch if no image provided
@@ -325,6 +349,319 @@ function registerIpcHandlers() {
     } catch (err) {
       return { success: false, error: err.message || 'Booking failed' }
     }
+  })
+
+  // Find Available — bulk availability scan across all bookable restaurants
+  let findCancelled = false
+
+  ipcMain.on('find:cancel', () => {
+    findCancelled = true
+  })
+
+  ipcMain.handle('find:search-available', async (_, { date, time_start, time_end, party_size }) => {
+    findCancelled = false
+    const allBookable = getBookableRestaurants()
+    const resyList = allBookable.filter(r => r.platform === 'Resy')
+    const tockList = allBookable.filter(r => r.platform === 'Tock')
+    const total = resyList.length + tockList.length
+    let checked = 0
+    let withAvailability = 0
+    let errors = 0
+    const skippedPlatforms = []
+
+    const sendResult = (data) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('find:result', data)
+      }
+    }
+    const sendProgress = (currentName) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('find:progress', { checked, total, currentName })
+      }
+    }
+
+    // Validate credentials
+    const resySession = getCredential('Resy')
+    let resyAuthToken = null
+    if (resySession) {
+      resyAuthToken = resyPlatform.extractResyToken(resySession)
+      if (resyAuthToken) {
+        setSessionCookies(resySession)
+      }
+    }
+    if (!resyAuthToken && resyList.length > 0) {
+      skippedPlatforms.push('Resy')
+      checked += resyList.length
+    }
+
+    const tockSession = getCredential('Tock')
+    if (!tockSession && tockList.length > 0) {
+      skippedPlatforms.push('Tock')
+      checked += tockList.length
+    }
+
+    // Async semaphore for concurrency control
+    function createSemaphore(max) {
+      let running = 0
+      const queue = []
+      return function acquire() {
+        return new Promise(resolve => {
+          const tryRun = () => {
+            if (running < max) {
+              running++
+              resolve(() => { running--; if (queue.length > 0) queue.shift()() })
+            } else {
+              queue.push(tryRun)
+            }
+          }
+          tryRun()
+        })
+      }
+    }
+
+    // Resy queue — concurrency 5
+    const resySemaphore = createSemaphore(5)
+    const resyPromises = resyAuthToken ? resyList.map(async (restaurant) => {
+      if (findCancelled) return
+      const release = await resySemaphore()
+      if (findCancelled) { release(); return }
+
+      sendProgress(restaurant.name)
+      try {
+        let venueId = restaurant.venue_id
+        if (!venueId) {
+          try {
+            venueId = await resolveVenueId(resyAuthToken, restaurant.url)
+            updateRestaurantVenueId(restaurant.id, venueId)
+          } catch (err) {
+            checked++
+            errors++
+            sendResult({ restaurant, slots: [], error: `Could not resolve venue: ${err.message}` })
+            sendProgress(restaurant.name)
+            release()
+            return
+          }
+        }
+
+        let slots = null
+        try {
+          slots = await findAvailability(resyAuthToken, venueId, date, party_size)
+        } catch (err) {
+          const statusCode = err.statusCode || err.status
+          if (statusCode === 429) {
+            // Backoff and retry once
+            await new Promise(r => setTimeout(r, 2000))
+            if (findCancelled) { release(); return }
+            try {
+              slots = await findAvailability(resyAuthToken, venueId, date, party_size)
+            } catch (retryErr) {
+              checked++
+              errors++
+              sendResult({ restaurant, slots: [], error: retryErr.message || 'Rate limited' })
+              sendProgress(restaurant.name)
+              release()
+              return
+            }
+          } else {
+            checked++
+            errors++
+            sendResult({ restaurant, slots: [], error: err.message || 'Failed to check' })
+            sendProgress(restaurant.name)
+            release()
+            return
+          }
+        }
+
+        checked++
+        if (slots && slots.length > 0) withAvailability++
+        sendResult({ restaurant, slots: slots || [], error: null })
+        sendProgress(restaurant.name)
+      } catch (err) {
+        checked++
+        errors++
+        sendResult({ restaurant, slots: [], error: err.message || 'Unknown error' })
+        sendProgress(restaurant.name)
+      }
+      release()
+    }) : []
+
+    // Tock queue — serial with 500ms delay
+    const tockPromise = tockSession ? (async () => {
+      for (const restaurant of tockList) {
+        if (findCancelled) break
+        sendProgress(restaurant.name)
+        try {
+          const slots = await tockPlatform.checkAvailability(tockSession, restaurant.url, date, party_size)
+          checked++
+          if (slots && slots.length > 0) withAvailability++
+          sendResult({ restaurant, slots: slots || [], error: null })
+          sendProgress(restaurant.name)
+        } catch (err) {
+          checked++
+          errors++
+          sendResult({ restaurant, slots: [], error: err.message || 'Failed to check' })
+          sendProgress(restaurant.name)
+        }
+        // 500ms delay between Tock checks
+        if (!findCancelled) {
+          await new Promise(r => setTimeout(r, 500))
+        }
+      }
+    })() : Promise.resolve()
+
+    // Run both queues in parallel
+    await Promise.allSettled([...resyPromises, tockPromise])
+
+    return { total, checked, withAvailability, errors, skippedPlatforms }
+  })
+
+  // Resolve Beli Platforms — search Resy/Tock/OpenTable for Unknown-platform restaurants
+  ipcMain.handle('db:resolve-beli-platforms', async () => {
+    const unknowns = getUnknownPlatformRestaurants()
+    if (unknowns.length === 0) return { success: true, resolved: 0, total: 0, results: [] }
+
+    // Well-known release schedule overrides
+    const RELEASE_OVERRIDES = {
+      'torrisi': '30 days ahead',
+      'cosme': '30 days ahead',
+      '4 charles prime rib': '30 days ahead',
+      'don angie': '14 days ahead',
+      'i sodi': '14 days ahead',
+      'via carota': '14 days ahead',
+      'lilia': '14 days ahead',
+      'tatiana': '14 days ahead',
+      'claro': '14 days ahead',
+      'oxomoco': '14 days ahead',
+      'thai diner': '14 days ahead',
+      'king': '14 days ahead'
+    }
+
+    // Platform default release schedules
+    const PLATFORM_DEFAULTS = {
+      Resy: '14 days ahead',
+      Tock: 'Monthly drop',
+      OpenTable: '30 days ahead'
+    }
+
+    function normalizeName(name) {
+      return name
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // strip accents (é→e, ñ→n)
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+    }
+
+    function fuzzyMatch(searchName, resultName) {
+      const a = normalizeName(searchName)
+      const b = normalizeName(resultName)
+      if (a === b) return true
+      if (a.includes(b) || b.includes(a)) return true
+      // Check if all words of the shorter name appear in the longer name
+      const aWords = a.split(' ')
+      const bWords = b.split(' ')
+      const [shorter, longer] = aWords.length <= bWords.length ? [aWords, b] : [bWords, a]
+      if (shorter.length >= 2 && shorter.every(w => longer.includes(w))) return true
+      return false
+    }
+
+    const results = []
+    let resolved = 0
+
+    const sendProgress = (done, total, name, status) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('beli:resolve-progress', { done, total, name, status })
+      }
+    }
+
+    for (let i = 0; i < unknowns.length; i++) {
+      const restaurant = unknowns[i]
+      const query = restaurant.name
+      let matched = false
+      let matchResult = null
+
+      sendProgress(i, unknowns.length, query, 'searching')
+
+      // 1. Search OpenTable (no auth needed)
+      try {
+        const otResults = await opentablePlatform.searchRestaurants(query)
+        const otMatch = otResults.find(r => fuzzyMatch(query, r.name))
+        if (otMatch) {
+          matched = true
+          matchResult = { ...otMatch, platform: 'OpenTable' }
+        }
+      } catch (err) {
+        console.log(`[Resolve] OpenTable search failed for "${query}": ${err.message}`)
+      }
+
+      // 2. Search Resy (needs auth)
+      if (!matched) {
+        try {
+          const session = getCredential('Resy')
+          if (session) {
+            const authToken = resyPlatform.extractResyToken(session)
+            if (authToken) {
+              setSessionCookies(session)
+              const resyResults = await searchVenues(authToken, query)
+              console.log(`[Resolve] Resy results for "${query}": ${resyResults.length} results — ${resyResults.slice(0, 3).map(r => `"${r.name}"`).join(', ')}`)
+              const resyMatch = resyResults.find(r => fuzzyMatch(query, r.name))
+              if (resyMatch) {
+                matched = true
+                matchResult = { ...resyMatch, platform: 'Resy' }
+              } else if (resyResults.length > 0) {
+                console.log(`[Resolve] No fuzzy match for "${query}" in: ${resyResults.map(r => r.name).join(', ')}`)
+              }
+            }
+          }
+        } catch (err) {
+          console.log(`[Resolve] Resy search failed for "${query}": ${err.message}`)
+        }
+      }
+
+      // 3. Search Tock (needs session + headless)
+      if (!matched) {
+        try {
+          const session = getCredential('Tock')
+          if (session) {
+            const tockResults = await tockPlatform.searchRestaurants(session, query)
+            const tockMatch = tockResults.find(r => fuzzyMatch(query, r.name))
+            if (tockMatch) {
+              matched = true
+              matchResult = { ...tockMatch, platform: 'Tock' }
+            }
+          }
+        } catch (err) {
+          console.log(`[Resolve] Tock search failed for "${query}": ${err.message}`)
+        }
+      }
+
+      if (matched && matchResult) {
+        const releaseOverride = RELEASE_OVERRIDES[normalizeName(query)]
+        const releaseSchedule = releaseOverride || PLATFORM_DEFAULTS[matchResult.platform] || null
+
+        updateRestaurantPlatform(restaurant.id, {
+          platform: matchResult.platform,
+          url: matchResult.url || null,
+          venue_id: matchResult.venue_id || null,
+          image_url: matchResult.image_url || restaurant.image_url || null,
+          reservation_release: releaseSchedule
+        })
+
+        results.push({ id: restaurant.id, name: query, platform: matchResult.platform, url: matchResult.url, status: 'resolved' })
+        resolved++
+        sendProgress(i + 1, unknowns.length, query, `resolved → ${matchResult.platform}`)
+      } else {
+        results.push({ id: restaurant.id, name: query, status: 'not_found' })
+        sendProgress(i + 1, unknowns.length, query, 'not found')
+      }
+
+      // Rate limit delay between searches
+      if (i < unknowns.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
+    }
+
+    return { success: true, resolved, total: unknowns.length, results }
   })
 
   // Instant Book Now
@@ -391,6 +728,43 @@ function registerIpcHandlers() {
   })
 }
 
+async function validateCredentials() {
+  const results = {}
+
+  // Validate Resy
+  const resySession = getCredential('Resy')
+  if (resySession) {
+    const result = await validateResySession(resySession, resyPlatform.extractResyToken, setSessionCookies)
+    results.Resy = result
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('credentials:status-update', { platform: 'Resy', ...result })
+    }
+  } else {
+    results.Resy = { valid: false, reason: 'Not configured' }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('credentials:status-update', { platform: 'Resy', valid: false, reason: 'Not configured' })
+    }
+  }
+
+  // Validate Tock
+  const tockSession = getCredential('Tock')
+  if (tockSession) {
+    const result = await tockPlatform.validateSession(tockSession)
+    if (result.valid) markValidated('Tock')
+    results.Tock = result
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('credentials:status-update', { platform: 'Tock', ...result })
+    }
+  } else {
+    results.Tock = { valid: false, reason: 'Not configured' }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('credentials:status-update', { platform: 'Tock', valid: false, reason: 'Not configured' })
+    }
+  }
+
+  return results
+}
+
 app.whenReady().then(() => {
   const dbPath = initDatabase()
   console.log('Database initialized at:', dbPath)
@@ -405,6 +779,11 @@ app.whenReady().then(() => {
 
   startScheduler(mainWindow)
 
+  // Validate saved credentials on startup (fire-and-forget)
+  validateCredentials().catch(err => {
+    console.error('Startup credential validation failed:', err.message)
+  })
+
   // Fetch missing restaurant images in background
   const missing = getRestaurantsWithoutImages()
   if (missing.length > 0) {
@@ -416,6 +795,21 @@ app.whenReady().then(() => {
     }).then(() => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('images:complete')
+      }
+    })
+  }
+
+  // Fetch missing Google ratings/URLs in background
+  const missingGoogle = getRestaurantsWithoutGoogleData()
+  if (missingGoogle.length > 0) {
+    console.log(`Fetching Google data for ${missingGoogle.length} restaurants in background...`)
+    fetchAllMissingGoogleData(missingGoogle, updateRestaurantGoogleData, (done, total, name) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('google:progress', { done, total, name })
+      }
+    }).then(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('google:complete')
       }
     })
   }

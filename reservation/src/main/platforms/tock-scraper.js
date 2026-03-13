@@ -33,56 +33,86 @@ export async function findAvailability(context, slug, date, partySize) {
     console.log(`[Tock] Navigating to: ${url}`)
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
 
-    // Wait for search results to render (Tock is a React SPA)
+    // Wait for the search page to render — Tock is a React SPA.
+    // The calendar (SearchBarMonths) renders first, then results load.
     await page.waitForSelector(
-      '[data-testid="search-result-time"], .Consumer-resultsListItem, .SearchResults, [class*="search-result"], [class*="SearchResult"]',
+      'div.SearchBarMonths, div[data-testid="search-result-list-item"], .Consumer-resultsListItem, button.Consumer-reservationLink',
       { timeout: 15000 }
     ).catch(() => {
-      console.log('[Tock] No result selectors found — page may have no availability')
+      console.log('[Tock] No calendar or result selectors found — page may have no availability')
     })
 
-    // Extra settle time for React rendering
-    await new Promise(r => setTimeout(r, 2000))
+    // Extra settle time for React rendering of search results
+    await new Promise(r => setTimeout(r, 3000))
 
     // Extract slots from the DOM using multiple selector strategies
     const slots = await page.evaluate(() => {
       const results = []
+      const timePattern = /\d{1,2}:\d{2}\s*(AM|PM)/i
 
-      // Strategy 1: Modern data-testid selectors (tockstalk pattern)
-      const testIdSlots = document.querySelectorAll('[data-testid="search-result-time"]')
-      if (testIdSlots.length > 0) {
-        testIdSlots.forEach((el, index) => {
-          const timeText = el.textContent?.trim()
-          const container = el.closest('[data-testid*="search-result"]') || el.parentElement
-          const typeEl = container?.querySelector('[data-testid*="experience"], [class*="experience"], [class*="EventName"]')
+      // Strategy 1: data-testid="search-result-list-item" with Consumer-resultsListItemTime
+      const listItems = document.querySelectorAll('div[data-testid="search-result-list-item"]')
+      if (listItems.length > 0) {
+        listItems.forEach((el, index) => {
+          const timeEl = el.querySelector('span.Consumer-resultsListItemTime span') ||
+                         el.querySelector('span.Consumer-resultsListItemTime') ||
+                         el.querySelector('[class*="Time"] span') ||
+                         el.querySelector('[class*="Time"]')
+          const timeText = timeEl?.textContent?.trim()
+          // Find the experience/type from the parent reservation group
+          const group = el.closest('[class*="reservation"]') || el.parentElement
+          const typeEl = group?.querySelector('h3.Consumer-reservationHeading') ||
+                         group?.querySelector('[class*="Heading"], [class*="heading"]')
           const type = typeEl?.textContent?.trim() || ''
-          if (timeText) {
+          if (timeText && timePattern.test(timeText)) {
             results.push({ time: timeText, config_id: `tock_${index}_${timeText.replace(/\s+/g, '')}`, type })
           }
         })
         return results
       }
 
-      // Strategy 2: Legacy CSS class selectors (reserve-tfl pattern)
-      const legacySlots = document.querySelectorAll('button.Consumer-resultsListItem.is-available, .Consumer-resultsListItem.is-available')
+      // Strategy 2: Consumer-resultsListItem elements (legacy class-based)
+      const legacySlots = document.querySelectorAll('.Consumer-resultsListItem.is-available, .Consumer-resultsListItem')
       if (legacySlots.length > 0) {
         legacySlots.forEach((el, index) => {
-          const timeEl = el.querySelector('.Consumer-resultsListItemTime, [class*="Time"], span')
-          const timeText = timeEl?.textContent?.trim() || el.textContent?.trim()
-          if (timeText) {
+          const timeEl = el.querySelector('span.Consumer-resultsListItemTime span') ||
+                         el.querySelector('.Consumer-resultsListItemTime') ||
+                         el.querySelector('[class*="Time"] span') ||
+                         el.querySelector('span')
+          const timeText = timeEl?.textContent?.trim()
+          if (timeText && timePattern.test(timeText)) {
             results.push({ time: timeText, config_id: `tock_${index}_${timeText.replace(/\s+/g, '')}`, type: '' })
           }
         })
         return results
       }
 
-      // Strategy 3: Broad fallback — any clickable element with time-like text in search results
+      // Strategy 3: Find experience groups (Consumer-reservationLink) and extract times within
+      const expGroups = document.querySelectorAll('button.Consumer-reservationLink, [class*="reservationLink"]')
+      if (expGroups.length > 0) {
+        let idx = 0
+        expGroups.forEach(group => {
+          const heading = group.querySelector('h3.Consumer-reservationHeading, [class*="Heading"]')
+          const type = heading?.textContent?.trim() || ''
+          const timeEls = group.querySelectorAll('span.Consumer-resultsListItemTime span, [class*="Time"] span, span')
+          timeEls.forEach(el => {
+            const text = el.textContent?.trim()
+            if (text && timePattern.test(text)) {
+              results.push({ time: text, config_id: `tock_${idx}_${text.replace(/\s+/g, '')}`, type })
+              idx++
+            }
+          })
+        })
+        if (results.length > 0) return results
+      }
+
+      // Strategy 4: Broad fallback — any element with time-like text in the page
       const searchArea = document.querySelector('[class*="SearchResult"], [class*="search-result"], [class*="Results"], main, [role="main"]') || document.body
-      const allButtons = searchArea.querySelectorAll('button, [role="button"], a')
-      const timePattern = /^\d{1,2}:\d{2}\s*(AM|PM)$/i
-      allButtons.forEach((el, index) => {
+      const allEls = searchArea.querySelectorAll('button, [role="button"], a, span, div')
+      const strictTimePattern = /^\d{1,2}:\d{2}\s*(AM|PM)$/i
+      allEls.forEach((el, index) => {
         const text = el.textContent?.trim()
-        if (text && timePattern.test(text)) {
+        if (text && strictTimePattern.test(text) && el.children.length === 0) {
           results.push({ time: text, config_id: `tock_${index}_${text.replace(/\s+/g, '')}`, type: '' })
         }
       })
